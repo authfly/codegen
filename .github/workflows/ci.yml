@@ -1,0 +1,22 @@
+# Runs the generators in --check mode against authfly/authkit (default main; workflow_dispatch can pick a ref):
+# every file authkit commits from these generators must equal what this checkout generates.
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      authkit_ref: { description: "authfly/authkit ref to check against", default: main }
+permissions: { contents: read }
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/checkout@v4
+        with: { repository: authfly/authkit, ref: "${{ inputs.authkit_ref || 'main' }}", path: .deps/authkit }
+      - name: bundle (syntax + imports)
+        run: bun build src/cli.ts --target bun --outdir /tmp/acg >/dev/null
+      - name: shared, registry, widgets up to date in authkit
+        run: bun src/cli.ts all --check --root .deps/authkit

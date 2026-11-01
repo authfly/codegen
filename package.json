@@ -1,0 +1,14 @@
+{
+  "name": "@authfly/codegen",
+  "version": "0.0.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "description": "Authfly code generation: one spec -> the Authfly layer (skin, middle layer, widgets, brand registry) in 9 targets.",
+  "type": "module",
+  "bin": {
+    "authfly-codegen": "src/cli.ts"
+  },
+  "scripts": {
+    "check": "bun src/cli.ts all --check --root ${AUTHKIT:-../authkit}"
+  }
+}
