@@ -2,7 +2,7 @@
 //   authfly-codegen registry [--check] --root <authkit>
 // Items (names prefixed "authfly-"), built per runtime by `ui8kit build` (authkit tools/registry.sh) from packages/ui/<rt>:
 //   authfly-lib         registry:lib        skin (recipes + wrappers), Lucide glyph data, widget props, theme.css
-//   authfly-components  registry:composite  middle layer: Card, Field, Alert, Badge, LucideIcon, layout, shared widget parts
+//   authfly-components  registry:composite  middle layer (templ: components.templ + generated per-component files): Card, Field, Alert, Badge, LucideIcon, layout, shared widget parts
 //   authfly-<widget>    registry:block      one per widget + its .types.ts (sign-in, sign-up, request, notice, consent, account)
 //   authfly-widgets     registry:block      webcomponent + templ only: all 6 widgets live in one file there (widgets.ts / blocks.templ)
 //   authfly             registry:block      JS runtimes: the package entry (authfly.ts; webcomponent also define.ts)
@@ -53,7 +53,8 @@ function layout(rt: Rt): Record<string, { type: string; files: string[]; desc: s
     items["authfly-lib"] = { type: "registry:lib", desc: "Authfly skin (generated recipe tables + wrappers), Lucide glyph data, widget props and attribute helpers.",
       files: ["authfly/attrs.go", "authfly/lucide_icons.go", "authfly/props.go", "authfly/skin.go", "authfly/skin_recipes_gen.go"] };
     items["authfly-components"] = { type: "registry:composite", desc: "Authfly middle layer (templ source + generated Go).",
-      files: ["authfly/components.templ", "authfly/components_templ.go"] };
+      files: ["authfly/components.templ", "authfly/components_templ.go",
+        ...ls("authfly").filter((f) => /\/[a-z_]+(\.templ|_templ\.go)$/.test(f) && !/\/(components|blocks|authfly_[a-z_]+)(\.templ|_templ\.go)$/.test(f))] };
   } else {
     const libDir = rt === "jinja2" ? "authfly_jinja" : "src";
     items["authfly-lib"] = { type: "registry:lib", desc: "Authfly skin (generated recipe tables + wrappers), Lucide glyph data and the template extension.",

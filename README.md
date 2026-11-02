@@ -13,10 +13,11 @@ code imports them from the target's `ui/` folder, and the brand registry lists t
 | --- | --- | --- |
 | `shared` | `packages/shared/src` (skin recipes, widget types, Lucide glyphs, theme) | byte copies in the 5 JS targets; Go / PHP / Python tables for templ, Twig, Latte, Jinja2 |
 | `widgets` | `specs/widgets/*.def.ts` (this repo) | the widget source in all 9 targets |
+| `components` | `specs/components/*.def.ts` (this repo) | the Authfly middle layer: one file per component in React, Solid, Vue, Svelte, Web Components, templ; a `codegen:begin/end <name>` region in the Twig / Latte / Jinja2 `authfly/components.*` macro file |
 | `registry` | `packages/ui/<rt>` | `packages/registry/src/<rt>/registry.json` (brand registry manifests) |
 
 ```sh
-bun src/cli.ts <shared|widgets|registry|all> [--check] --root <authkit>
+bun src/cli.ts <shared|widgets|components|registry|all> [--check] --root <authkit>
 scripts/publish-registry.sh <ui8kit-site-checkout> [authkit]   # build + copy into ui8kit/site r/authfly/ (no push)
 ```
 
@@ -35,8 +36,11 @@ in all 9 targets. DSL growth per widget: sign-up `checkbox`, `field` `hint` / `a
 `blocks.templ`); request `orv`, `field` `inputmode`; notice `iconBadge`, `para`, `head` align/role/kids, `when`
 `els` / `inline`, `form` action/extra/errorId, widget `card` and `lets` / `local()`; consent and account `el` (Box /
 Text with a tag, token classes or the muted skin), `title`, `badge`, `separator`, `group`, `sp`, `each` `as` +
-`item(field, var)`, `button` `type`, `form` `testid`, boolean props. Still hand-written in authkit: the middle layer
-(Card, Stack/Group/Form, Field, Title, Alert, Badge, IconBadge, LucideIcon, WidgetHead/Messages/_parts, the server
+`item(field, var)`, `button` `type`, `form` `testid`, boolean props. 
+
+Middle layer (`src/dsl-components.ts`, `src/components.ts`): **Card** is generated (kind `surface`: a primitive with a
+default tag and a skin recipe). Still hand-written in authkit: the rest of the middle layer
+(Stack/Group/Form, Field, Title, Alert, Badge, IconBadge, LucideIcon, WidgetHead/Messages/_parts, the server
 macro files and templ components/helpers); next: specs for those.
 
 ## Brand registry hosting
