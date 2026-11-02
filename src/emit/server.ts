@@ -50,7 +50,28 @@ export function emitServer(t: Srv, w: Widget): string {
       case "hidden": return call("hidden", [s(n.name), x(n.value)]);
       case "field": {
         const input = dict([["type", x(n.type)], ["name", s(n.name)], ...(n.required ? [["required", "true"]] as [string, string][] : []), ["attrs", dict([["autocomplete", x(n.autocomplete)]])]]);
-        return call("field", [dict([["label", x(n.label)], ["for", `${L ? "$id . " : "id ~ "}${s("-" + n.name)}`], ["formError", L ? "$formError" : "formError"], ["input", input]])]);
+        const fe = L ? "$formError" : "formError";
+        const idx = (suf: string) => `${L ? "$id . " : "id ~ "}${s("-" + suf)}`;
+        const f: [string, string][] = [["label", x(n.label)], ["for", idx(n.name)], ...(n.hint ? [["hint", x(n.hint)]] as [string, string][] : []), ["formError", fe]];
+        if (!n.addon) return call("field", [dict([...f, ["input", input]])]);
+        // addon: muted text after the input (field macro: describe + suffix), only when non-blank
+        const a = n.addon; const on = x(a.text);
+        const tx = call("text", [s("span"), `${L ? "afText" : "af_text"}('muted')`, dict([["id", idx(a.id)], ["data-testid", s(a.testid)]]), esc(on)]);
+        const [d, v] = capture(L ? `{if ${on}}${tx}{/if}` : `{%- if ${on} -%}${tx}{%- endif -%}`);
+        const describe = t === "jinja2" ? `${idx(a.id)} if ${on} else none` : `(${on}) ? ${idx(a.id)} : null`;
+        return `${d}\n${call("field", [dict([...f, ["describe", describe], ["suffix", L ? `(string) ${v}` : v], ["input", input]])])}`;
+      }
+      case "checkbox": {
+        const fe = L ? "$formError" : "formError";
+        const cid = `${L ? "$id . " : "id ~ "}${s("-" + n.name)}`;
+        const inv = t === "jinja2" ? `'true' if ${fe} else none` : `${fe} ? 'true' : null`;
+        const body = t === "twig"
+          ? `{{ include('ui/checkbox/Checkbox.html.twig', {name: ${s(n.name)}, ${n.required ? "required: true, " : ""}id: ${cid}, ariaDescribedBy: ${fe}, ariaInvalid: ${inv}, class: af_skin('checkbox')}, with_context = false) }}{{- include('ui/label/Label.html.twig', {htmlFor: ${cid}, class: af_skin('label', 'font-normal'), children: af_esc(${x(n.label)})}, with_context = false) }}`
+          : t === "latte"
+            ? `{include '../ui/checkbox/Checkbox.latte', name: ${s(n.name)}, ${n.required ? "required: true, " : ""}id: ${cid}, ariaDescribedBy: ${fe}, ariaInvalid: ${inv}, class: afSkin('checkbox')}{include '../ui/label/Label.latte', htmlFor: ${cid}, class: afSkin('label', 'font-normal'), children: (string) afEsc(${x(n.label)})}`
+            : `{{ af.prim('ui/checkbox/checkbox.html.j2', {'Name': ${s(n.name)}, ${n.required ? "'Required': true, " : ""}'ID': ${cid}, 'AriaDescribedBy': ${fe}, 'AriaInvalid': ${inv}, 'Class': af_skin('checkbox')}) }}{{- af.prim('ui/label/label.html.j2', {'For': ${cid}, 'Class': af_skin('label', 'font-normal')}, af_esc(${x(n.label)})) }}`;
+        const [d, v] = capture(body);
+        return `${d}\n${call("group", [s("2"), "''", "''", s(n.extra), L ? "[]" : "{}", v])}`;
       }
       case "button": {
         const a = dict([...ax(n.attrs), ...(n.testid ? [["data-testid", s(n.testid)]] as [string, string][] : [])]);

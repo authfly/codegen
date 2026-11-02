@@ -80,14 +80,38 @@ export function emitJs(t: Js, w: Widget): string {
       case "field": {
         used.add("Field"); used.add("Input"); skins.add("inputSkin");
         const ac = t === "react" ? "autoComplete" : "autocomplete";
-        const inp = [at("type", n.type), `name="${n.name}"`, at(ac, n.autocomplete), ...(n.required ? ["required"] : []), idOf(n.name), code(cls, "inputSkin()"), 'data-testid="field"'];
-        const fl = [code("label", x(n.label)).replace(/^:label="(.*)"$/, ':label="$1"'), code("htmlFor", `\`\${${ref("prop", "id")}}-${n.name}\``)];
-        if (t === "react") return [I(`<Field ${[...extra, ...fl].join(" ")}>`), I(`  <Input ${inp.join(" ")} />`), I("</Field>")];
-        const aria = [code("aria-describedby", "f.describe()"), code("aria-invalid", "f.invalid")];
+        const a = n.addon;
+        const addonId = a ? `\`\${${ref("prop", "id")}}-${a.id}\`` : "";
+        const addonOn = a ? `${x(a.text)} ? ${addonId} : undefined` : "";
+        const inp = [at("type", n.type), `name="${n.name}"`, at(ac, n.autocomplete), ...(n.required ? ["required"] : []), idOf(n.name),
+          ...(a && t === "react" ? [code("aria-describedby", addonOn)] : []), code(cls, "inputSkin()"), 'data-testid="field"'];
+        const fl = [code("label", x(n.label)), code("htmlFor", `\`\${${ref("prop", "id")}}-${n.name}\``), ...(n.hint ? [code("hint", x(n.hint))] : [])];
+        const aria = t === "react" ? [] : [code("aria-describedby", `f.describe(${addonOn})`), code("aria-invalid", "f.invalid")];
         const el = `<Input ${[...inp, ...aria].join(" ")} />`;
+        if (a) {
+          // Group: the input + the addon text (rendered only when non-blank)
+          used.add("Group"); used.add("Text"); skins.add("textSkin");
+          const tx = `<Text ${[...(t === "vue" ? [`v-if="${x(a.text).replace(/"/g, "'")}"`] : []), 'tag="span"', code("id", addonId.slice(0)), code(cls, "textSkin.muted"), `data-testid="${a.testid}"`].join(" ")}>${out(a.text)}</Text>`;
+          const opt = t === "react" ? `{${x(a.text)} ? ${tx} : null}` : t === "solid" ? `<Show when={${x(a.text)}}>${tx}</Show>` : t === "svelte" ? `{#if ${x(a.text)}}${tx}{/if}` : tx;
+          const grp = (i: string) => [i + '<Group gap="2">', i + "  " + el, i + "  " + opt, i + "</Group>"];
+          if (t === "react") return [I(`<Field ${[...extra, ...fl].join(" ")}>`), ...grp(ind + "  "), I("</Field>")];
+          if (t === "vue") return [I(`<Field ${[...extra, ...fl, 'v-slot="f"'].join(" ")}>`), ...grp(ind + "  "), I("</Field>")];
+          if (t === "svelte") return [I(`<Field ${[...extra, ...fl].join(" ")}>`), I("  {#snippet children(f)}"), ...grp(ind + "    "), I("  {/snippet}"), I("</Field>")];
+          return [I(`<Field ${[...extra, ...fl].join(" ")}>{(f) => (`), ...grp(ind + "  "), I(")}</Field>")];
+        }
+        if (t === "react") return [I(`<Field ${[...extra, ...fl].join(" ")}>`), I(`  ${el}`), I("</Field>")];
         if (t === "vue") return [I(`<Field ${[...extra, ...fl, 'v-slot="f"'].join(" ")}>`), I(`  ${el}`), I("</Field>")];
         if (t === "svelte") return [I(`<Field ${[...extra, ...fl].join(" ")}>`), I(`  {#snippet children(f)}${el}{/snippet}`), I("</Field>")];
         return [I(`<Field ${[...extra, ...fl].join(" ")}>{(f) => (`), I(`  ${el}`), I(")}</Field>")];
+      }
+      case "checkbox": {
+        used.add("Group"); used.add("Checkbox"); used.add("Label"); skins.add("checkboxSkin"); skins.add("labelSkin");
+        const cid = `\`\${${ref("prop", "id")}}-${n.name}\``;
+        const err = t === "react" || t === "solid" ? `errorIdOf(${ref("prop", "id")}, ${ref("prop", "error")})` : `${ref("prop", "error")} ? \`\${${ref("prop", "id")}}-error\` : undefined`;
+        const inv = `${ref("prop", "error")} ? ${q}true${q} : undefined`;
+        const cb = `<Checkbox ${[`name="${n.name}"`, ...(n.required ? ["required"] : []), code("id", cid), code("aria-describedby", err), code("aria-invalid", inv), code(cls, "checkboxSkin()")].join(" ")} />`;
+        const lb = `<Label ${[code(t === "react" ? "htmlFor" : "for", cid), code(cls, `labelSkin(${q}font-normal${q})`)].join(" ")}>${out(n.label)}</Label>`;
+        return [I(`<Group ${[...extra, 'gap="2"', ...(n.extra ? [`${cls}="${n.extra}"`] : [])].join(" ")}>`), I(`  ${cb}`), I(`  ${lb}`), I("</Group>")];
       }
       case "button": {
         used.add("Button"); skins.add("buttonSkin");
@@ -117,7 +141,7 @@ export function emitJs(t: Js, w: Widget): string {
   used.add("Card"); skins.add("widgetCardSkin");
   const lmProps = t === "react" || t === "solid" ? `{...landmark(${ref("prop", "id")}, ${ref("prop", "landmarkLabel")})}` : t === "vue" ? 'v-bind="lm"' : "{...lm}";
   const body = [`<Card ${code(cls, "widgetCardSkin()")} data-testid="authfly-${w.name}" ${lmProps}>`, ...kids(w.body, "  "), "</Card>"];
-  const skinList = ["buttonSkin", "linkSkin", "inputSkin", "textSkin", "widgetCardSkin"].filter((s) => skins.has(s)).join(", ");
+  const skinList = ["buttonSkin", "linkSkin", "inputSkin", "checkboxSkin", "labelSkin", "textSkin", "widgetCardSkin"].filter((s) => skins.has(s)).join(", ");
   const head = w.doc.split("\n").map((l) => `// ${l}`);
   const gen = `// Code generated by authfly/codegen from specs/widgets/${w.name}.def.ts. DO NOT EDIT.`;
 
@@ -125,13 +149,14 @@ export function emitJs(t: Js, w: Widget): string {
     const sol = t === "solid";
     const ui = (n: string, f: string) => `import { ${n} } from "../ui/${f}/${f}${sol ? ".solid" : ""}";`;
     const imp = [
-      ...(sol ? [`import { ${["For", "Show"].filter((s) => body.join("\n").includes(`<${s}`)).concat("mergeProps").join(", ")} } from "solid-js";`] : []),
+      ...(sol ? [`import { ${["For", "Show"].filter((s) => new RegExp(`<${s}[ >]`).test(body.join("\n"))).concat("mergeProps").join(", ")} } from "solid-js";`] : []),
       `import { Card } from "../components/card";`,
-      `import { ${["Stack", "Form"].filter((s) => used.has(s)).join(", ")} } from "../components/layout";`,
+      `import { ${["Stack", "Group", "Form"].filter((s) => used.has(s)).join(", ")} } from "../components/layout";`,
       ...(used.has("Field") ? [`import { Field } from "../components/field";`] : []),
       ...(used.has("LucideIcon") ? [`import { LucideIcon } from "../components/lucide-icon";`] : []),
       ...(used.has("Text") ? [ui("Text", "text")] : []), ...(used.has("Button") ? [ui("Button", "button")] : []),
       ...(used.has("Link") ? [ui("Link", "link")] : []), ...(used.has("Input") ? [ui("Input", "input")] : []),
+      ...(used.has("Label") ? [ui("Label", "label")] : []), ...(used.has("Checkbox") ? [ui("Checkbox", "checkbox")] : []),
       `import { ${skinList} } from "../skin/skin";`,
       `import { ${["WidgetHead", "Messages", "Hidden"].filter((s) => used.has(s)).concat("landmark", "errorIdOf").join(", ")} } from "./_parts";`,
     ];
@@ -140,7 +165,7 @@ export function emitJs(t: Js, w: Widget): string {
       return [gen, ...head, ...imp, `import type { ${w.component}Props } from "./props";`, `export type { ${w.component}Props };`, "",
         `export function ${w.component}(props: ${w.component}Props) {`, `  const p = mergeProps({ ${d} }, props);`, "  return (", ...body.map((l) => "    " + l), "  );", "}", ""].join("\n");
     }
-    const types = [`import type { ${w.labelsType} } from "./authfly-${w.name}.types";`, `import type { Feature } from "./feature-grid.types";`];
+    const types = [`import type { ${w.labelsType} } from "./authfly-${w.name}.types";`, ...(w.props.some((p) => p.ts.includes("Feature")) ? [`import type { Feature } from "./feature-grid.types";`] : [])];
     const pt = w.props.map((p) => `  ${p.name}${p.def !== undefined || p.optional ? "?" : ""}: ${p.ts};`);
     const args = w.props.map((p) => (p.def !== undefined ? `${p.name} = ${JSON.stringify(p.def)}` : p.name)).join(", ");
     return [gen, ...head, ...imp, ...types, "", `export type ${w.component}Props = {`, ...pt, "};", "",
@@ -150,8 +175,8 @@ export function emitJs(t: Js, w: Widget): string {
   const P = (s: string) => s[0].toUpperCase() + s.slice(1);
   const imp = [
     `import Card from "../components/Card.${ext}";`,
-    ...["Stack", "Form", "Field", "LucideIcon"].filter((s) => used.has(s)).map((s) => `import ${s} from "../components/${s}.${ext}";`),
-    ...["text", "button", "link", "input"].filter((s) => used.has(P(s))).map((s) => `import ${P(s)} from "../ui/${s}/${P(s)}.${ext}";`),
+    ...["Stack", "Group", "Form", "Field", "LucideIcon"].filter((s) => used.has(s)).map((s) => `import ${s} from "../components/${s}.${ext}";`),
+    ...["text", "button", "link", "input", "label", "checkbox"].filter((s) => used.has(P(s))).map((s) => `import ${P(s)} from "../ui/${s}/${P(s)}.${ext}";`),
     ...["WidgetHead", "Messages"].filter((s) => used.has(s)).map((s) => `import ${s} from "./${s}.${ext}";`),
     `import { ${skinList} } from "../skin/skin";`,
     `import type { ${w.component}Props } from "./props";`,

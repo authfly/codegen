@@ -30,13 +30,17 @@ export type N =
   | { k: "stack"; gap: string; attrs: Attrs; kids: N[] }
   | { k: "form"; kids: N[] }
   | { k: "hidden"; name: string; value: E }
-  | { k: "field"; label: E; name: string; type: E; autocomplete: E; required: boolean }
+  | { k: "field"; label: E; name: string; type: E; autocomplete: E; required: boolean; hint?: E; addon?: Addon }
+  | { k: "checkbox"; name: string; label: E; required: boolean; extra: string }
   | { k: "button"; href?: E; variant: "default" | "outline"; extra: string; testid?: string; attrs: Attrs; kids: N[] }
   | { k: "submit"; testid: string; label: E }
   | { k: "link"; href: E; extra?: string; testid: string; label: E }
   | { k: "foot"; lead: E; href: E; testid: string; label: E }
   | { k: "icon"; name: E }
   | { k: "text"; v: E };
+/** Addon: muted text after the input in a Group (e.g. the mail domain), id = <widget id>-<id>, linked to the input via
+ *  aria-describedby only when the text is non-blank. */
+export type Addon = { id: string; testid: string; text: E };
 export const head = (): N => ({ k: "head" });
 export const messages = (info?: E): N => ({ k: "messages", info });
 export const when = (c: E, kids: N[]): N => ({ k: "when", c, kids });
@@ -44,8 +48,12 @@ export const each = (list: string, kids: N[]): N => ({ k: "each", list, kids });
 export const stack = (gap: string, attrs: Attrs, kids: N[]): N => ({ k: "stack", gap, attrs, kids });
 export const form = (kids: N[]): N => ({ k: "form", kids });
 export const hidden = (name: string, value: E): N => ({ k: "hidden", name, value });
-export const field = (f: { label: E; name: string; type: E | string; autocomplete: E | string; required?: boolean }): N =>
-  ({ k: "field", label: f.label, name: f.name, type: ex(f.type), autocomplete: ex(f.autocomplete), required: f.required ?? false });
+export const field = (f: { label: E; name: string; type: E | string; autocomplete: E | string; required?: boolean; hint?: E; addon?: Addon }): N =>
+  ({ k: "field", label: f.label, name: f.name, type: ex(f.type), autocomplete: ex(f.autocomplete), required: f.required ?? false, hint: f.hint, addon: f.addon });
+/** Checkbox + its Label in a Group (gap 2, plus extra classes); the checkbox carries the form error (aria-describedby,
+ *  aria-invalid) since it has no Field of its own. */
+export const checkbox = (c: { name: string; label: E; required?: boolean; extra?: string }): N =>
+  ({ k: "checkbox", name: c.name, label: c.label, required: c.required ?? false, extra: c.extra ?? "" });
 export const button = (b: { href?: E; variant: "default" | "outline"; extra?: string; testid?: string; attrs?: Attrs }, kids: N[]): N =>
   ({ k: "button", href: b.href, variant: b.variant, extra: b.extra ?? "", testid: b.testid, attrs: b.attrs ?? {}, kids });
 export const submit = (testid: string, label: E): N => ({ k: "submit", testid, label });
