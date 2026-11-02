@@ -705,3 +705,324 @@ templ Form(action, class string, attrs templ.Attributes) {
 {%- endmacro -%}` },
   };
 }
+
+/** field (Field + Hidden + form-error context): whole files keyed by packages/ui path (header added by src/components.ts). */
+export function fieldFiles(): Record<string, string> {
+  return {
+    "react/src/components/field.tsx": `// A form field: label, control (children), hint and error text. \`htmlFor\` ties the label to the control id.
+// The control (the child element whose id === htmlFor, searched two levels deep) gets:
+//   aria-describedby = its own ids + \`\${htmlFor}-hint\` + \`\${htmlFor}-error\` + the form-level error (FormErrorContext)
+//   aria-invalid="true" when the field has an error or the form reports a server error.
+import { Children, cloneElement, createContext, isValidElement, useContext, type ReactElement, type ReactNode } from "react";
+import { Box } from "../ui/box/box";
+import { Input } from "../ui/input/input";
+import { Label } from "../ui/label/label";
+import { Text } from "../ui/text/text";
+import { cn } from "../utils";
+import { labelSkin, textSkin } from "../skin/skin";
+
+/** Id of the form-level (server) error element; set by <Form errorId>. */
+export const FormErrorContext = createContext<string | undefined>(undefined);
+
+export type FieldProps = { label: string; htmlFor: string; hint?: string; error?: string; className?: string; children?: ReactNode };
+
+type Ctl = ReactElement<{ id?: string; children?: ReactNode; "aria-describedby"?: string; "aria-invalid"?: unknown }>;
+
+function wire(node: ReactNode, id: string, describedBy: string[], invalid: boolean, depth = 0): ReactNode {
+  return Children.map(node, (child) => {
+    if (!isValidElement(child)) return child;
+    const el = child as Ctl;
+    if (el.props.id === id) {
+      const ids = [el.props["aria-describedby"], ...describedBy].filter(Boolean).join(" ");
+      return cloneElement(el, { "aria-describedby": ids || undefined, "aria-invalid": invalid ? "true" : el.props["aria-invalid"] } as Partial<Ctl["props"]>);
+    }
+    if (depth < 2 && el.props.children !== undefined) return cloneElement(el, {}, wire(el.props.children, id, describedBy, invalid, depth + 1));
+    return el;
+  });
+}
+
+export function Field({ label, htmlFor, hint, error, className, children }: FieldProps) {
+  const formError = useContext(FormErrorContext);
+  const hintId = hint ? \`\${htmlFor}-hint\` : undefined;
+  const errorId = error ? \`\${htmlFor}-error\` : undefined;
+  const describedBy = [hintId, errorId, formError].filter((x): x is string => !!x);
+  return (
+    <Box className={cn("flex min-w-0 flex-col gap-2", className)}>
+      <Label htmlFor={htmlFor} className={labelSkin()}>{label}</Label>
+      {wire(children, htmlFor, describedBy, !!error || !!formError)}
+      {hint ? <Text id={hintId} className={textSkin.hint}>{hint}</Text> : null}
+      {error ? <Text id={errorId} className="text-xs font-semibold text-destructive">{error}</Text> : null}
+    </Box>
+  );
+}
+
+/** Hidden input: the value is always emitted (an empty csrf / token included). */
+export function Hidden({ name, value }: { name: string; value: string }) {
+  return <Input type="hidden" name={name} value={value} />;
+}
+`,
+    "solid/src/components/field.tsx": `// A form field: label, control, hint and error. \`children\` is a function receiving { describe, invalid }:
+// set them on the control (aria-describedby / aria-invalid). describedby = own ids + hint + field error + form error.
+import { Show, useContext, type JSX } from "solid-js";
+import { Box } from "../ui/box/box.solid";
+import { Input } from "../ui/input/input.solid";
+import { Label } from "../ui/label/label.solid";
+import { Text } from "../ui/text/text.solid";
+import { cn } from "../utils";
+import { labelSkin, textSkin } from "../skin/skin";
+import { FormErrorContext } from "./layout";
+
+export type FieldControl = { describe: (own?: string) => string | undefined; invalid: "true" | undefined };
+export type FieldProps = { label: string; htmlFor: string; hint?: string; error?: string; class?: string; children: (f: FieldControl) => JSX.Element };
+
+export function Field(props: FieldProps) {
+  const formError = useContext(FormErrorContext);
+  const hintId = () => (props.hint ? \`\${props.htmlFor}-hint\` : undefined);
+  const errorId = () => (props.error ? \`\${props.htmlFor}-error\` : undefined);
+  const ctl: FieldControl = {
+    describe: (own) => [own, hintId(), errorId(), formError()].filter(Boolean).join(" ") || undefined,
+    get invalid() { return props.error || formError() ? "true" : undefined; },
+  };
+  return (
+    <Box class={cn("flex min-w-0 flex-col gap-2", props.class)}>
+      <Label for={props.htmlFor} class={labelSkin()}>{props.label}</Label>
+      {props.children(ctl)}
+      <Show when={props.hint}><Text id={hintId()} class={textSkin.hint}>{props.hint}</Text></Show>
+      <Show when={props.error}><Text id={errorId()} class="text-xs font-semibold text-destructive">{props.error}</Text></Show>
+    </Box>
+  );
+}
+
+/** Hidden input: the value is always emitted (an empty csrf / token included). */
+export const Hidden = (props: { name: string; value: string }) => <Input type="hidden" name={props.name} value={props.value} />;
+`,
+    "vue/src/components/Field.vue": `<script setup lang="ts">
+// A form field: label, control (default slot), hint and error. The slot receives \`describe(ownIds?)\` and \`invalid\`:
+// bind them on the control as :aria-describedby / :aria-invalid. describedby = own ids + hint + field error + form error.
+import { computed, inject } from "vue";
+import Box from "../ui/box/Box.vue";
+import Label from "../ui/label/Label.vue";
+import Text from "../ui/text/Text.vue";
+import { cn } from "../utils";
+import { labelSkin, textSkin } from "../skin/skin";
+import { FormErrorKey } from "./context";
+const p = defineProps<{ label: string; htmlFor: string; hint?: string; error?: string; class?: string }>();
+const formError = inject(FormErrorKey, undefined);
+const hintId = computed(() => (p.hint ? \`\${p.htmlFor}-hint\` : undefined));
+const errorId = computed(() => (p.error ? \`\${p.htmlFor}-error\` : undefined));
+const invalid = computed(() => (p.error || formError?.value ? "true" : undefined));
+const describe = (own?: string) => [own, hintId.value, errorId.value, formError?.value].filter(Boolean).join(" ") || undefined;
+</script>
+<template>
+  <Box :class="cn('flex min-w-0 flex-col gap-2', p.class)">
+    <Label :for="p.htmlFor" :class="labelSkin()">{{ p.label }}</Label>
+    <slot :describe="describe" :invalid="invalid" />
+    <Text v-if="p.hint" :id="hintId" :class="textSkin.hint">{{ p.hint }}</Text>
+    <Text v-if="p.error" :id="errorId" class="text-xs font-semibold text-destructive">{{ p.error }}</Text>
+  </Box>
+</template>
+`,
+    "vue/src/components/context.ts": `import type { InjectionKey, Ref } from "vue";
+/** Id of the form-level (server) error element, provided by <Form :error-id>. */
+export const FormErrorKey: InjectionKey<Ref<string | undefined>> = Symbol("authfly-form-error");
+`,
+    "svelte/src/components/Field.svelte": `<script lang="ts" module>
+  export type FieldControl = { describe: (own?: string) => string | undefined; invalid: "true" | undefined };
+</script>
+
+<script lang="ts">
+  // A form field: label, control (children snippet), hint and error. The snippet receives { describe, invalid }:
+  // spread them on the control (aria-describedby / aria-invalid). describedby = own ids + hint + field error + form error.
+  import type { Snippet } from "svelte";
+  import Box from "../ui/box/Box.svelte";
+  import Label from "../ui/label/Label.svelte";
+  import Text from "../ui/text/Text.svelte";
+  import { cn } from "../utils";
+  import { labelSkin, textSkin } from "../skin/skin";
+  import { getFormError } from "./context";
+  let { label, htmlFor, hint, error, class: className, children }: { label: string; htmlFor: string; hint?: string; error?: string; class?: string; children: Snippet<[FieldControl]> } = $props();
+  const formError = getFormError();
+  const hintId = $derived(hint ? \`\${htmlFor}-hint\` : undefined);
+  const errorId = $derived(error ? \`\${htmlFor}-error\` : undefined);
+  const ctl: FieldControl = $derived({
+    describe: (own?: string) => [own, hintId, errorId, formError].filter(Boolean).join(" ") || undefined,
+    invalid: error || formError ? "true" : undefined,
+  });
+</script>
+
+<Box class={cn("flex min-w-0 flex-col gap-2", className)}>
+  <Label for={htmlFor} class={labelSkin()}>{label}</Label>
+  {@render children(ctl)}
+  {#if hint}<Text id={hintId} class={textSkin.hint}>{hint}</Text>{/if}
+  {#if error}<Text id={errorId} class="text-xs font-semibold text-destructive">{error}</Text>{/if}
+</Box>
+`,
+    "svelte/src/components/context.ts": `import { getContext, setContext } from "svelte";
+const KEY = Symbol("authfly-form-error");
+/** Form-level (server) error id, set by <Form errorId>; a getter so it stays reactive. */
+export const setFormError = (get: () => string | undefined) => setContext(KEY, get);
+export const getFormError = (): string | undefined => (getContext<(() => string | undefined) | undefined>(KEY) ?? (() => undefined))();
+`,
+    "webcomponent/src/components/field.ts": `// Field (label + control + hint + error, aria wiring) and the hidden input, over the UI8Kit 3 *.wc.ts primitives.
+import { renderBox } from "../ui/box/box.wc";
+import { renderText } from "../ui/text/text.wc";
+import { renderLabel } from "../ui/label/label.wc";
+import { renderInput as input } from "../ui/input/input.wc";
+import { cn } from "../utils";
+import { labelSkin, textSkin } from "../skin/skin";
+
+export type FieldControl = { describe: (own?: string) => string | undefined; invalid: "true" | undefined };
+
+/** Label + control + hint + error. \`control\` receives { describe, invalid } to set aria-describedby / aria-invalid. */
+export function field(opts: { label: string; htmlFor: string; hint?: string; error?: string; formError?: string; class?: string }, control: (f: FieldControl) => Element): Element {
+  const hintId = opts.hint ? \`\${opts.htmlFor}-hint\` : undefined;
+  const errorId = opts.error ? \`\${opts.htmlFor}-error\` : undefined;
+  const f: FieldControl = {
+    describe: (own) => [own, hintId, errorId, opts.formError].filter(Boolean).join(" ") || undefined,
+    invalid: opts.error || opts.formError ? "true" : undefined,
+  };
+  return renderBox({ class: cn("flex min-w-0 flex-col gap-2", opts.class) }, [
+    renderLabel({ for: opts.htmlFor, class: labelSkin() }, [opts.label]),
+    control(f),
+    opts.hint ? renderText({ id: hintId, class: textSkin.hint }, [opts.hint]) : null,
+    opts.error ? renderText({ id: errorId, class: "text-xs font-semibold text-destructive" }, [opts.error]) : null,
+  ]);
+}
+
+/** Hidden input: the value is always emitted (an empty csrf / token included). */
+export const hidden = (name: string, value: string) => input({ type: "hidden", name, value });
+`,
+    "templ/authfly/field.templ": `package authfly
+
+import (
+	"github.com/authfly/authkit/packages/ui/templ/ui/box"
+	"github.com/authfly/authkit/packages/ui/templ/ui/input"
+	"github.com/authfly/authkit/packages/ui/templ/ui/label"
+	"github.com/authfly/authkit/packages/ui/templ/ui/text"
+)
+
+// Hidden: value is always emitted, an empty csrf/token included (InputProps.Value is *string: nil = no attribute).
+templ Hidden(name, value string) {
+	@input.Input(input.InputProps{Type: "hidden", Name: name, Value: &value})
+}
+
+// FieldControl tells the control what to put in aria-describedby / aria-invalid.
+type FieldControl struct{ hint, err, form string; Invalid string }
+
+// Describe returns the control's aria-describedby: own ids + hint + field error + form error.
+func (f FieldControl) Describe(own ...string) string {
+	return describe(append(own, f.hint, f.err, f.form)...)
+}
+
+type FieldProps struct {
+	Label, HtmlFor, Hint, Error, FormError, Class string
+}
+
+func fieldControl(p FieldProps) FieldControl {
+	f := FieldControl{form: p.FormError}
+	if p.Hint != "" {
+		f.hint = p.HtmlFor + "-hint"
+	}
+	if p.Error != "" {
+		f.err = p.HtmlFor + "-error"
+	}
+	if p.Error != "" || p.FormError != "" {
+		f.Invalid = "true"
+	}
+	return f
+}
+
+// Field: label + control(f) + hint + error.
+templ Field(p FieldProps, control func(FieldControl) templ.Component) {
+	@box.Box(box.BoxProps{Class: cn("flex min-w-0 flex-col gap-2", p.Class)}) {
+		@label.Label(label.LabelProps{For: p.HtmlFor, Class: LabelSkin()}) {
+			{ p.Label }
+		}
+		@control(fieldControl(p))
+		if p.Hint != "" {
+			@text.Text(text.TextProps{Class: TextHint, Attrs: A("id", p.HtmlFor+"-hint")}) {
+				{ p.Hint }
+			}
+		}
+		if p.Error != "" {
+			@text.Text(text.TextProps{Class: "text-xs font-semibold text-destructive", Attrs: A("id", p.HtmlFor+"-error")}) {
+				{ p.Error }
+			}
+		}
+	}
+}
+
+// TextInput: Input primitive with the Authfly skin and the Field wiring.
+func TextInput(f FieldControl, typ, name, autocomplete, id string, required bool, own string, extra ...string) templ.Component {
+	return input.Input(input.InputProps{Type: typ, Name: name, ID: id, Required: required, Class: InputSkin(),
+		AriaDescribedBy: f.Describe(own), AriaInvalid: f.Invalid, Attrs: A(append([]string{"autocomplete", autocomplete, "data-testid", "field"}, extra...)...)})
+}
+`,
+  };
+}
+
+/** field server regions: the hidden macro and the field macro (Twig, Latte, Jinja2). */
+export function fieldBodies() {
+  return {
+    twig: { hidden: `{#- hidden: value always emitted, an empty one included (the primitive omits only null). -#}
+{%- macro hidden(name, value) -%}
+{{ include('ui/input/Input.html.twig', {type: 'hidden', name: name, value: value ?? ''}, with_context = false) }}
+{%- endmacro -%}`, field: `{#- field: label + Input + hint + error. f = {label, for, hint, error, formError, input: Input props, describe: own ids,
+    suffix: trusted html placed after the input in a Group}. aria-describedby = own + hint + error + form error;
+    aria-invalid="true" when the field or the form shows an error. -#}
+{%- macro field(f) -%}
+{%- set hintId = f.hint ?? '' ? f.for ~ '-hint' : null -%}
+{%- set errId = f.error ?? '' ? f.for ~ '-error' : null -%}
+{%- set wired = (f.input|default({}))|merge({id: f.for, class: af_skin('input'), ariaDescribedBy: af_describe(f.describe ?? null, hintId, errId, f.formError ?? null), ariaInvalid: ((f.error ?? '') or (f.formError ?? '')) ? 'true' : null, attrs: af_attrs((f.input.attrs ?? {})|merge({'data-testid': 'field'}))}) -%}
+{%- set ctl -%}{{ include('ui/input/Input.html.twig', wired, with_context = false) }}{%- endset -%}
+{%- if f.suffix ?? '' -%}{%- set ctl = _self.group('2', '', '', '', {}, ctl ~ f.suffix) -%}{%- endif -%}
+{%- set lbl -%}{{ include('ui/label/Label.html.twig', {htmlFor: f.for, class: af_skin('label'), children: af_esc(f.label)}, with_context = false) }}{%- endset -%}
+{%- set c -%}
+{{ lbl }}{{ ctl }}
+{%- if hintId %}{{ _self.text('', af_text('hint'), {id: hintId}, af_esc(f.hint)) }}{% endif -%}
+{%- if errId %}{{ _self.text('', 'text-xs font-semibold text-destructive', {id: errId}, af_esc(f.error)) }}{% endif -%}
+{%- endset -%}
+{{ _self.box('', 'flex min-w-0 flex-col gap-2', {}, c) }}
+{%- endmacro -%}` },
+    latte: { hidden: `{* hidden: value always emitted, an empty one included (the primitive omits only null). *}
+{define hidden, string $name, $value = ''}
+{include '../ui/input/Input.latte', type: 'hidden', name: $name, value: (string) $value}
+{/define}`, field: `{* field: label + Input + hint + error. $f = [label, for, hint, error, formError, input: Input params, describe: own ids,
+   suffix: trusted Html after the input, in a Group]. aria-describedby = own + hint + error + form error;
+   aria-invalid="true" when the field or the form shows an error. *}
+{define field, array $f}
+{var $hintId = ($f['hint'] ?? '') !== '' ? $f['for'] . '-hint' : null}
+{var $errId = ($f['error'] ?? '') !== '' ? $f['for'] . '-error' : null}
+{var $in = $f['input'] ?? []}
+{capture $ctl}{include '../ui/input/Input.latte', type: $in['type'] ?? '', name: $in['name'] ?? null, required: $in['required'] ?? false, id: $f['for'], class: afSkin('input'), ariaDescribedBy: afDescribe($f['describe'] ?? null, $hintId, $errId, $f['formError'] ?? null), ariaInvalid: (($f['error'] ?? '') !== '' || ($f['formError'] ?? null)) ? 'true' : null, attrs: afAttrs(($in['attrs'] ?? []) + ['data-testid' => 'field'])}{/capture}
+{if ($f['suffix'] ?? '') !== ''}{capture $ctl}{include group, '2', '', '', '', [], $ctl . $f['suffix']}{/capture}{/if}
+{capture $c}
+{include '../ui/label/Label.latte', htmlFor: $f['for'], class: afSkin('label'), children: (string) afEsc($f['label'] ?? '')}
+{$ctl}
+{if $hintId}{include text, '', afText('hint'), ['id' => $hintId], afEsc($f['hint'])}{/if}
+{if $errId}{include text, '', 'text-xs font-semibold text-destructive', ['id' => $errId], afEsc($f['error'])}{/if}
+{/capture}
+{include box, '', 'flex min-w-0 flex-col gap-2', [], $c}
+{/define}` },
+    jinja2: { hidden: `{#- hidden: value always emitted, an empty one included (the primitive omits only None). -#}
+{%- macro hidden(name, value='') -%}
+{{ prim('ui/input/input.html.j2', {'Type': 'hidden', 'Name': name, 'Value': '' if value is none else value}) }}
+{%- endmacro -%}`, field: `{#- field: label + Input + hint + error. f = {label, for, hint, error, formError, input: {type, name, required, attrs},
+    describe: own ids, suffix: trusted Markup after the input, in a Group}. aria-describedby = own + hint + error +
+    form error; aria-invalid="true" when the field or the form shows an error. -#}
+{%- macro field(f) -%}
+{%- set hint_id = f.for ~ '-hint' if f.hint else none -%}
+{%- set err_id = f.for ~ '-error' if f.error else none -%}
+{%- set inp = f.input or {} -%}
+{%- set attrs = dict(inp.attrs or {}) -%}{%- set _ = attrs.update({'data-testid': 'field'}) -%}
+{%- set ctl -%}{{ prim('ui/input/input.html.j2', {'Type': inp.type, 'Name': inp.name, 'Required': inp.required or false, 'ID': f.for, 'Class': af_skin('input'), 'AriaDescribedBy': af_describe(f.describe, hint_id, err_id, f.formError), 'AriaInvalid': 'true' if (f.error or f.formError) else none, 'Attrs': af_attrs(attrs)}) }}{%- endset -%}
+{%- if f.suffix -%}{%- set ctl = group('2', '', '', '', {}, ctl ~ f.suffix) -%}{%- endif -%}
+{%- set c -%}
+{{ prim('ui/label/label.html.j2', {'For': f.for, 'Class': af_skin('label')}, af_esc(f.label)) }}{{ ctl }}
+{%- if hint_id %}{{ text('', af_text('hint'), {'id': hint_id}, af_esc(f.hint)) }}{% endif -%}
+{%- if err_id %}{{ text('', 'text-xs font-semibold text-destructive', {'id': err_id}, af_esc(f.error)) }}{% endif -%}
+{%- endset -%}
+{{ box('', 'flex min-w-0 flex-col gap-2', {}, c) }}
+{%- endmacro -%}` },
+  };
+}

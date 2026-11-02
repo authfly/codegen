@@ -15,10 +15,15 @@ export type Glyph = { kind: "glyph"; name: string; prim: "icon"; macro?: string 
  * justify tables, Form over the Form primitive (method post, grid gap-4, form-level error id for Field), and on the
  * server targets the box / text primitive wrappers the other macros build on. */
 export type Layout = { kind: "layout"; name: string };
-export type Component = Surface | Message | Pill | Heading | Glyph | Layout;
+/** field: Field (label + control + hint + error; aria-describedby = own ids + hint + field error + form error,
+ * aria-invalid when the field or the form shows an error), the form-level error context (React/Solid context, Vue
+ * injection key, Svelte context) and Hidden (value always emitted; templ also TextInput, the wired Input). */
+export type FieldKind = { kind: "field"; name: string };
+export type Component = Surface | Message | Pill | Heading | Glyph | Layout | FieldKind;
 export const surface = (c: Omit<Surface, "kind">): Surface => ({ kind: "surface", ...c });
 export const message = (c: Omit<Message, "kind">): Message => ({ kind: "message", ...c });
 export const pill = (c: Omit<Pill, "kind">): Pill => ({ kind: "pill", ...c });
 export const heading = (c: Omit<Heading, "kind">): Heading => ({ kind: "heading", ...c });
 export const glyph = (c: Omit<Glyph, "kind">): Glyph => ({ kind: "glyph", ...c });
 export const layout = (c: Omit<Layout, "kind">): Layout => ({ kind: "layout", ...c });
+export const field = (c: Omit<FieldKind, "kind">): FieldKind => ({ kind: "field", ...c });
