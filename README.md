@@ -40,9 +40,10 @@ Text with a tag, token classes or the muted skin), `title`, `badge`, `separator`
 
 Middle layer (`src/dsl-components.ts`, `src/components.ts`, templates per kind in `src/emit/components.ts`):
 **Card** (kind `surface`), **Alert** (kind `message`), **Badge** + **IconBadge** (kind `pill` with its `tile`),
-**Title** (kind `heading`) and **LucideIcon** (kind `glyph`, server macro `icon`) are generated. Still hand-written in
-authkit: Stack/Group/Form, Field, WidgetHead/Messages/_parts, props, the rest of the server macro files (icon/box/text
-primitive wrappers, layout, field, head, messages) and the templ components/helpers; next: specs for those.
+**Title** (kind `heading`), **LucideIcon** (kind `glyph`, server macro `icon`) and the layout (kind `layout`: Stack,
+Group, Form, Vue/Svelte `layout.ts` tables, server `box` / `text` wrappers) are generated. Still hand-written in
+authkit: Field (+ form-error context), Hidden, WidgetHead/Messages/_parts, props, Jinja2 `prim`, the server
+field/head/messages macros and the templ helpers; next: specs for those.
 
 ## Brand registry hosting
 

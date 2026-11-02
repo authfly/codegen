@@ -447,3 +447,261 @@ templ ${P}(name, size string) {
 {%- endmacro -%}`,
   };
 }
+
+/** layout (Stack, Group, Form): whole files per JS runtime, keyed by the packages/ui-relative path. */
+export function layoutJs(): Record<string, string> {
+  return {
+    "react/src/components/layout.tsx": `// Layout helpers: Stack/Group over Box (8px-step gaps) and Form over the Form primitive (+ error context).
+import { Box, type BoxProps } from "../ui/box/box";
+import { Form as UiForm, type FormProps as UiFormProps } from "../ui/form/form";
+import { cn } from "../utils";
+import { FormErrorContext } from "./field";
+
+type Gap = "0" | "2" | "4" | "6" | "8";
+const gapCls: Record<Gap, string> = { "0": "gap-0", "2": "gap-2", "4": "gap-4", "6": "gap-6", "8": "gap-8" };
+const alignCls = { start: "items-start", center: "items-center", end: "items-end", stretch: "items-stretch" } as const;
+const justifyCls = { start: "justify-start", center: "justify-center", end: "justify-end", between: "justify-between" } as const;
+
+export type StackProps = BoxProps & { gap?: Gap; align?: keyof typeof alignCls; justify?: keyof typeof justifyCls };
+
+/** Vertical flex stack. */
+export function Stack({ gap = "4", align = "stretch", justify, className, ...rest }: StackProps) {
+  return <Box className={cn("flex flex-col", gapCls[gap], alignCls[align], justify && justifyCls[justify], className)} {...rest} />;
+}
+
+/** Horizontal flex row. */
+export function Group({ gap = "2", align = "center", justify, className, ...rest }: StackProps) {
+  return <Box className={cn("flex min-w-0", gapCls[gap], alignCls[align], justify && justifyCls[justify], className)} {...rest} />;
+}
+
+export type FormProps = Omit<UiFormProps, "method"> & {
+  method?: "get" | "post";
+  /** id of the server error element; every Field inside points aria-describedby at it and sets aria-invalid. */
+  errorId?: string;
+};
+
+/** The UI8Kit Form primitive with the Authfly grid and the form-level error context. */
+export function Form({ method = "post", className, errorId, ...rest }: FormProps) {
+  return (
+    <FormErrorContext.Provider value={errorId}>
+      <UiForm method={method} className={cn("grid gap-4", className)} {...rest} />
+    </FormErrorContext.Provider>
+  );
+}
+`,
+    "solid/src/components/layout.tsx": `// Stack/Group over Box (8px-step gaps) and Form over the Form primitive (+ form-level error context).
+import { createContext, splitProps, type JSX } from "solid-js";
+import { Box, type BoxProps } from "../ui/box/box.solid";
+import { Form as UiForm, type FormProps as UiFormProps } from "../ui/form/form.solid";
+import { cn } from "../utils";
+
+type Gap = "0" | "2" | "4" | "6" | "8";
+const gapCls: Record<Gap, string> = { "0": "gap-0", "2": "gap-2", "4": "gap-4", "6": "gap-6", "8": "gap-8" };
+const alignCls = { start: "items-start", center: "items-center", end: "items-end", stretch: "items-stretch" } as const;
+const justifyCls = { start: "justify-start", center: "justify-center", end: "justify-end", between: "justify-between" } as const;
+
+export type StackProps = BoxProps & { gap?: Gap; align?: keyof typeof alignCls; justify?: keyof typeof justifyCls };
+
+function flex(base: string, dGap: Gap, dAlign: keyof typeof alignCls) {
+  return (props: StackProps) => {
+    const [l, rest] = splitProps(props, ["gap", "align", "justify", "class", "className"]);
+    return <Box {...rest} class={cn(base, gapCls[l.gap ?? dGap], alignCls[l.align ?? dAlign], l.justify && justifyCls[l.justify], l.class ?? l.className)} />;
+  };
+}
+/** Vertical flex stack. */
+export const Stack = flex("flex flex-col", "4", "stretch");
+/** Horizontal flex row. */
+export const Group = flex("flex min-w-0", "2", "center");
+
+/** Id of the form-level (server) error element, provided by <Form errorId>. */
+export const FormErrorContext = createContext<() => string | undefined>(() => undefined);
+
+export type FormProps = Omit<UiFormProps, "method"> & { method?: "get" | "post"; errorId?: string; children?: JSX.Element };
+
+/** The UI8Kit Form primitive with the Authfly grid and the form-level error context. */
+export function Form(props: FormProps) {
+  const [l, rest] = splitProps(props, ["method", "errorId", "class", "className", "children"]);
+  return (
+    <FormErrorContext.Provider value={() => l.errorId}>
+      <UiForm {...rest} method={l.method ?? "post"} class={cn("grid gap-4", l.class ?? l.className)}>{l.children}</UiForm>
+    </FormErrorContext.Provider>
+  );
+}
+`,
+    "vue/src/components/Stack.vue": `<script setup lang="ts">
+import Box from "../ui/box/Box.vue";
+import { cn } from "../utils";
+import { gapCls, alignCls, justifyCls, type Gap, type Align, type Justify } from "./layout";
+defineOptions({ inheritAttrs: false });
+const p = withDefaults(defineProps<{ gap?: Gap; align?: Align; justify?: Justify; class?: string }>(), { gap: "4", align: "stretch" });
+</script>
+<template><Box v-bind="$attrs" :class="cn('flex flex-col', gapCls[p.gap], alignCls[p.align], p.justify && justifyCls[p.justify], p.class)"><slot /></Box></template>
+`,
+    "vue/src/components/Group.vue": `<script setup lang="ts">
+import Box from "../ui/box/Box.vue";
+import { cn } from "../utils";
+import { gapCls, alignCls, justifyCls, type Gap, type Align, type Justify } from "./layout";
+defineOptions({ inheritAttrs: false });
+const p = withDefaults(defineProps<{ gap?: Gap; align?: Align; justify?: Justify; class?: string }>(), { gap: "2", align: "center" });
+</script>
+<template><Box v-bind="$attrs" :class="cn('flex min-w-0', gapCls[p.gap], alignCls[p.align], p.justify && justifyCls[p.justify], p.class)"><slot /></Box></template>
+`,
+    "vue/src/components/Form.vue": `<script setup lang="ts">
+// The UI8Kit Form primitive with the Authfly grid; provides the form-level error id to every Field inside.
+import { provide, toRef } from "vue";
+import UiForm from "../ui/form/Form.vue";
+import { cn } from "../utils";
+import { FormErrorKey } from "./context";
+defineOptions({ inheritAttrs: false });
+const p = withDefaults(defineProps<{ method?: "get" | "post"; errorId?: string; class?: string }>(), { method: "post" });
+provide(FormErrorKey, toRef(p, "errorId"));
+</script>
+<template><UiForm v-bind="$attrs" :method="p.method" :class="cn('grid gap-4', p.class)"><slot /></UiForm></template>
+`,
+    "vue/src/components/layout.ts": `export type Gap = "0" | "2" | "4" | "6" | "8";
+export const gapCls: Record<Gap, string> = { "0": "gap-0", "2": "gap-2", "4": "gap-4", "6": "gap-6", "8": "gap-8" };
+export const alignCls = { start: "items-start", center: "items-center", end: "items-end", stretch: "items-stretch" } as const;
+export const justifyCls = { start: "justify-start", center: "justify-center", end: "justify-end", between: "justify-between" } as const;
+export type Align = keyof typeof alignCls;
+export type Justify = keyof typeof justifyCls;
+`,
+    "svelte/src/components/Stack.svelte": `<script lang="ts">
+  import type { Snippet } from "svelte";
+  import Box from "../ui/box/Box.svelte";
+  import { cn } from "../utils";
+  import { gapCls, alignCls, justifyCls, type Gap, type Align, type Justify } from "./layout";
+  let { gap = "4", align = "stretch", justify, class: className, children, ...rest }: { gap?: Gap; align?: Align; justify?: Justify; class?: string; children?: Snippet; [k: string]: unknown } = $props();
+</script>
+
+<Box {...rest} class={cn("flex flex-col", gapCls[gap], alignCls[align], justify && justifyCls[justify], className)}>{@render children?.()}</Box>
+`,
+    "svelte/src/components/Group.svelte": `<script lang="ts">
+  import type { Snippet } from "svelte";
+  import Box from "../ui/box/Box.svelte";
+  import { cn } from "../utils";
+  import { gapCls, alignCls, justifyCls, type Gap, type Align, type Justify } from "./layout";
+  let { gap = "2", align = "center", justify, class: className, children, ...rest }: { gap?: Gap; align?: Align; justify?: Justify; class?: string; children?: Snippet; [k: string]: unknown } = $props();
+</script>
+
+<Box {...rest} class={cn("flex min-w-0", gapCls[gap], alignCls[align], justify && justifyCls[justify], className)}>{@render children?.()}</Box>
+`,
+    "svelte/src/components/Form.svelte": `<script lang="ts">
+  // The UI8Kit Form primitive with the Authfly grid; shares the form-level error id with every Field inside.
+  import type { Snippet } from "svelte";
+  import UiForm from "../ui/form/Form.svelte";
+  import { cn } from "../utils";
+  import { setFormError } from "./context";
+  let { method = "post", errorId, class: className, children, ...rest }: { method?: "get" | "post"; errorId?: string; class?: string; children?: Snippet; [k: string]: unknown } = $props();
+  setFormError(() => errorId);
+</script>
+
+<UiForm {...rest} {method} class={cn("grid gap-4", className)}>{@render children?.()}</UiForm>
+`,
+    "svelte/src/components/layout.ts": `export type Gap = "0" | "2" | "4" | "6" | "8";
+export const gapCls: Record<Gap, string> = { "0": "gap-0", "2": "gap-2", "4": "gap-4", "6": "gap-6", "8": "gap-8" };
+export const alignCls = { start: "items-start", center: "items-center", end: "items-end", stretch: "items-stretch" } as const;
+export const justifyCls = { start: "justify-start", center: "justify-center", end: "justify-end", between: "justify-between" } as const;
+export type Align = keyof typeof alignCls;
+export type Justify = keyof typeof justifyCls;
+`,
+  };
+}
+
+/** layout bodies: WC module body, templ components, server prim (box/text) + layout regions. */
+export function layoutBodies() {
+  return {
+    wc: `type Gap = "0" | "2" | "4" | "6" | "8";
+const gapCls: Record<Gap, string> = { "0": "gap-0", "2": "gap-2", "4": "gap-4", "6": "gap-6", "8": "gap-8" };
+const alignCls = { start: "items-start", center: "items-center", end: "items-end", stretch: "items-stretch" } as const;
+const justifyCls = { start: "justify-start", center: "justify-center", end: "justify-end", between: "justify-between" } as const;
+export type FlexProps = BoxElementProps & { gap?: Gap; align?: keyof typeof alignCls; justify?: keyof typeof justifyCls };
+const flex = (base: string, dGap: Gap, dAlign: keyof typeof alignCls) => (props: FlexProps, children: Children): Element => {
+  const { gap = dGap, align = dAlign, justify, class: className, ...rest } = props;
+  return renderBox({ ...rest, class: cn(base, gapCls[gap], alignCls[align], justify && justifyCls[justify], className) }, children);
+};
+export const stack = flex("flex flex-col", "4", "stretch");
+export const group = flex("flex min-w-0", "2", "center");
+
+/** Form primitive with the Authfly grid. errorId (server error element) is wired into fields by field(). */
+export function form(props: { action?: string; method?: "get" | "post"; class?: string; [k: string]: unknown }, children: Children): Element {
+  const { method = "post", class: className, ...rest } = props;
+  return renderForm({ ...rest, method, class: cn("grid gap-4", className) }, children);
+}
+`,
+    templ: `// Stack: vertical flex; gap 0|2|4|6|8 (default 4), align start|center|end|stretch (default stretch).
+templ Stack(gap, align, justify, class string, attrs templ.Attributes) {
+	@box.Box(box.BoxProps{Class: cn("flex flex-col", gapCls[or(gap, "4")], alignCls[or(align, "stretch")], justifyCls[justify], class), Attrs: attrs}) {
+		{ children... }
+	}
+}
+
+// Group: horizontal flex row; gap default 2, align default center.
+templ Group(gap, align, justify, class string, attrs templ.Attributes) {
+	@box.Box(box.BoxProps{Class: cn("flex min-w-0", gapCls[or(gap, "2")], alignCls[or(align, "center")], justifyCls[justify], class), Attrs: attrs}) {
+		{ children... }
+	}
+}
+
+// Form: the Form primitive (method post) with the Authfly grid. The form-level error id goes to each Field.
+templ Form(action, class string, attrs templ.Attributes) {
+	@form.Form(form.FormProps{Action: action, Method: "post", Class: cn("grid gap-4", class), Attrs: attrs}) {
+		{ children... }
+	}
+}
+`,
+    twig: { prim: `{%- macro box(tag, class, attrs, children) -%}
+{{ include('ui/box/Box.html.twig', {tag: tag ?: '', class: class ?: '', attrs: af_attrs(attrs ?? {}), children: children ?? ''}, with_context = false) }}
+{%- endmacro -%}
+
+{%- macro text(tag, class, attrs, children) -%}
+{{ include('ui/text/Text.html.twig', {tag: tag ?: '', class: class ?: '', attrs: af_attrs(attrs ?? {}), children: children ?? ''}, with_context = false) }}
+{%- endmacro -%}`, layout: `{%- macro stack(gap, align, justify, class, attrs, children) -%}
+{{ _self.box('', af_cn('flex flex-col', af_gap(gap, '4'), af_align(align, 'stretch'), af_justify(justify), class), attrs, children) }}
+{%- endmacro -%}
+
+{%- macro group(gap, align, justify, class, attrs, children) -%}
+{{ _self.box('', af_cn('flex min-w-0', af_gap(gap, '2'), af_align(align, 'center'), af_justify(justify), class), attrs, children) }}
+{%- endmacro -%}
+
+{#- form: the Form primitive (method post) with the Authfly grid; the form error id is passed to each field. -#}
+{%- macro form(action, class, attrs, children) -%}
+{{ include('ui/form/Form.html.twig', {action: action, method: 'post', class: af_cn('grid gap-4', class), attrs: af_attrs(attrs ?? {}), children: children}, with_context = false) }}
+{%- endmacro -%}` },
+    latte: { prim: `{define box, string $tag = '', string $class = '', array $attrs = [], $children = ''}
+{include '../ui/box/Box.latte', tag: $tag, class: $class, attrs: afAttrs($attrs), children: (string) $children}
+{/define}
+
+{define text, string $tag = '', string $class = '', array $attrs = [], $children = ''}
+{include '../ui/text/Text.latte', tag: $tag, class: $class, attrs: afAttrs($attrs), children: (string) $children}
+{/define}`, layout: `{define stack, string $gap = '', string $align = '', string $justify = '', string $class = '', array $attrs = [], $children = ''}
+{include box, '', afCn('flex flex-col', afGap($gap, '4'), afAlign($align, 'stretch'), afJustify($justify), $class), $attrs, $children}
+{/define}
+
+{define group, string $gap = '', string $align = '', string $justify = '', string $class = '', array $attrs = [], $children = ''}
+{include box, '', afCn('flex min-w-0', afGap($gap, '2'), afAlign($align, 'center'), afJustify($justify), $class), $attrs, $children}
+{/define}
+
+{* form: the Form primitive (method post) with the Authfly grid; the form error id is passed to each field. *}
+{define form, string $action = '', string $class = '', array $attrs = [], $children = ''}
+{include '../ui/form/Form.latte', action: $action, method: 'post', class: afCn('grid gap-4', $class), attrs: afAttrs($attrs), children: (string) $children}
+{/define}` },
+    jinja2: { prim: `{%- macro box(tag='', cls='', attrs={}, children='') -%}
+{{ prim('ui/box/box.html.j2', {'Tag': tag, 'Class': cls, 'Attrs': af_attrs(attrs)}, children) }}
+{%- endmacro -%}
+
+{%- macro text(tag='', cls='', attrs={}, children='') -%}
+{{ prim('ui/text/text.html.j2', {'Tag': tag, 'Class': cls, 'Attrs': af_attrs(attrs)}, children) }}
+{%- endmacro -%}`, layout: `{%- macro stack(gap='', align='', justify='', cls='', attrs={}, children='') -%}
+{{ box('', af_cn('flex flex-col', af_gap(gap, '4'), af_align(align, 'stretch'), af_justify(justify), cls), attrs, children) }}
+{%- endmacro -%}
+
+{%- macro group(gap='', align='', justify='', cls='', attrs={}, children='') -%}
+{{ box('', af_cn('flex min-w-0', af_gap(gap, '2'), af_align(align, 'center'), af_justify(justify), cls), attrs, children) }}
+{%- endmacro -%}
+
+{#- form: the Form primitive (method post) with the Authfly grid; the form error id is passed to each field. -#}
+{%- macro form(action='', cls='', attrs={}, children='') -%}
+{{ prim('ui/form/form.html.j2', {'Action': action, 'Method': 'post', 'Class': af_cn('grid gap-4', cls), 'Attrs': af_attrs(attrs)}, children) }}
+{%- endmacro -%}` },
+  };
+}

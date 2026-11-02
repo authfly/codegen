@@ -11,9 +11,14 @@ export type Pill = { kind: "pill"; name: string; skin: string; prim: "text"; til
 export type Heading = { kind: "heading"; name: string; prim: "text"; macro?: string };
 /** glyph: a Lucide glyph (the shared LUCIDE table) inside the Icon primitive; `macro` = the server macro name. */
 export type Glyph = { kind: "glyph"; name: string; prim: "icon"; macro?: string };
-export type Component = Surface | Message | Pill | Heading | Glyph;
+/** layout: Stack (column, gap 4, stretch) and Group (row, gap 2, center) over Box with the 8px-step gap / align /
+ * justify tables, Form over the Form primitive (method post, grid gap-4, form-level error id for Field), and on the
+ * server targets the box / text primitive wrappers the other macros build on. */
+export type Layout = { kind: "layout"; name: string };
+export type Component = Surface | Message | Pill | Heading | Glyph | Layout;
 export const surface = (c: Omit<Surface, "kind">): Surface => ({ kind: "surface", ...c });
 export const message = (c: Omit<Message, "kind">): Message => ({ kind: "message", ...c });
 export const pill = (c: Omit<Pill, "kind">): Pill => ({ kind: "pill", ...c });
 export const heading = (c: Omit<Heading, "kind">): Heading => ({ kind: "heading", ...c });
 export const glyph = (c: Omit<Glyph, "kind">): Glyph => ({ kind: "glyph", ...c });
+export const layout = (c: Omit<Layout, "kind">): Layout => ({ kind: "layout", ...c });

@@ -6,8 +6,8 @@
 // `codegen:begin <name>` / `codegen:end <name>` comments; the rest of that file stays hand-written.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { Component, Glyph, Heading, Message, Pill } from "./dsl-components";
-import { camel, glyphBodies, glyphJs, headingBodies, headingJs, messageBodies, messageJs, pillBodies, pillJs } from "./emit/components";
+import type { Component, Glyph, Heading, Layout, Message, Pill } from "./dsl-components";
+import { camel, layoutBodies, layoutJs, glyphBodies, glyphJs, headingBodies, headingJs, messageBodies, messageJs, pillBodies, pillJs } from "./emit/components";
 
 const specs = join(import.meta.dir, "../specs/components");
 const pascal = (w: string) => w.split("-").map((s) => s[0].toUpperCase() + s.slice(1)).join("");
@@ -107,8 +107,8 @@ function region(o: Out, name: string) {
 }
 
 /** Server macro regions (Twig, Latte, Jinja2) with the codegen:begin/end markers. */
-function serverRegions(o: Out, name: string, b: { twig: string; latte: string; jinja2: string }) {
-  const H = head(name), reg = region(o, name);
+function serverRegions(o: Out, name: string, b: { twig: string; latte: string; jinja2: string }, spec = name) {
+  const H = head(spec), reg = region(o, name);
   reg("twig/authfly/components.html.twig", `{#- codegen:begin ${name}: ${H} -#}`, `{#- codegen:end ${name} -#}`, b.twig);
   reg("latte/authfly/components.latte", `{* codegen:begin ${name}: ${H} *}`, `{* codegen:end ${name} *}`, b.latte);
   reg("jinja2/authfly/components.html.j2", `{#- codegen:begin ${name}: ${H} -#}`, `{#- codegen:end ${name} -#}`, b.jinja2);
@@ -213,6 +213,31 @@ ${b.templ}`);
   serverRegions(o, c.name, b);
 }
 
+function layoutKind(c: Layout, o: Out) {
+  const H = head(c.name), b = layoutBodies();
+  for (const [rel, body] of Object.entries(layoutJs()))
+    o.files.set(rel, rel.endsWith(".vue") ? hdr("vue", H, body) : rel.endsWith(".svelte") ? hdr("svelte", H, body) : hdr("tsx", H, body));
+  o.files.set(`webcomponent/src/components/${c.name}.ts`, `// ${H}
+// Stack / Group over Box (8px-step gaps) and Form over the Form primitive (Authfly grid).
+import type { Children } from "../utils/wc";
+import { renderBox, type BoxElementProps } from "../ui/box/box.wc";
+import { renderForm } from "../ui/form/form.wc";
+import { cn } from "../utils";
+
+${b.wc}`);
+  o.files.set(`templ/authfly/${c.name}.templ`, `// ${H}
+package authfly
+
+import (
+\t"github.com/authfly/authkit/packages/ui/templ/ui/box"
+\t"github.com/authfly/authkit/packages/ui/templ/ui/form"
+)
+
+${b.templ}`);
+  serverRegions(o, c.name, { twig: b.twig.layout, latte: b.latte.layout, jinja2: b.jinja2.layout });
+  serverRegions(o, `${c.name}-prim`, { twig: b.twig.prim, latte: b.latte.prim, jinja2: b.jinja2.prim }, c.name);
+}
+
 /** packages/ui-relative path -> content (whole files) and region bodies. */
 export async function componentOutputs(): Promise<Out> {
   const o: Out = { files: new Map(), regions: new Map() };
@@ -221,7 +246,8 @@ export async function componentOutputs(): Promise<Out> {
     else if (c.kind === "message") messageKind(c, o);
     else if (c.kind === "pill") pillKind(c, o);
     else if (c.kind === "heading") headingKind(c, o);
-    else glyphKind(c, o);
+    else if (c.kind === "glyph") glyphKind(c, o);
+    else layoutKind(c, o);
   }
   return o;
 }
