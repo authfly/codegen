@@ -6,8 +6,8 @@
 // `codegen:begin <name>` / `codegen:end <name>` comments; the rest of that file stays hand-written.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { Component, Message, Pill } from "./dsl-components";
-import { camel, messageBodies, messageJs, pillBodies, pillJs } from "./emit/components";
+import type { Component, Glyph, Heading, Message, Pill } from "./dsl-components";
+import { camel, glyphBodies, glyphJs, headingBodies, headingJs, messageBodies, messageJs, pillBodies, pillJs } from "./emit/components";
 
 const specs = join(import.meta.dir, "../specs/components");
 const pascal = (w: string) => w.split("-").map((s) => s[0].toUpperCase() + s.slice(1)).join("");
@@ -130,7 +130,7 @@ function messageKind(c: Message, o: Out) {
 import type { Children } from "../utils/wc";
 import { renderBox } from "../ui/box/box.wc";
 import { ${sk}, type Tone } from "../skin/skin";
-import { lucideIcon } from "./index";
+import { lucideIcon } from "./lucide-icon";
 
 ${b.wc}`);
   o.files.set(`templ/authfly/${c.name.replace(/-/g, "_")}.templ`, `// ${H}
@@ -155,7 +155,7 @@ function pillKind(c: Pill, o: Out) {
 import type { Children } from "../utils/wc";
 import { renderText, type TextElementProps } from "../ui/text/text.wc";
 import { ${sk}, ${tsk}, type BadgeVariant } from "../skin/skin";
-import { lucideIcon } from "./index";
+import { lucideIcon } from "./lucide-icon";
 
 ${b.wc}`);
   o.files.set(`templ/authfly/${c.name.replace(/-/g, "_")}.templ`, `// ${H}
@@ -167,13 +167,61 @@ ${b.templ}`);
   serverRegions(o, c.name, b);
 }
 
+/** The four JS-family whole files of a kind with one component file per runtime. */
+function jsFiles(o: Out, c: Component, H: string, j: { react: string; solid: string; vue: string; svelte: string }) {
+  const P = pascal(c.name);
+  o.files.set(`react/src/components/${c.name}.tsx`, hdr("tsx", H, j.react));
+  o.files.set(`solid/src/components/${c.name}.tsx`, hdr("tsx", H, j.solid));
+  o.files.set(`vue/src/components/${P}.vue`, hdr("vue", H, j.vue));
+  o.files.set(`svelte/src/components/${P}.svelte`, hdr("svelte", H, j.svelte));
+}
+
+function headingKind(c: Heading, o: Out) {
+  const H = head(c.name), b = headingBodies(c);
+  jsFiles(o, c, H, headingJs(c));
+  o.files.set(`webcomponent/src/components/${c.name}.ts`, `// ${H}
+import type { Children } from "../utils/wc";
+import { renderText, type TextElementProps } from "../ui/text/text.wc";
+import { cn } from "../utils";
+import { textSkin } from "../skin/skin";
+
+${b.wc}`);
+  o.files.set(`templ/authfly/${c.name.replace(/-/g, "_")}.templ`, `// ${H}
+package authfly
+
+import "github.com/authfly/authkit/packages/ui/templ/ui/text"
+
+${b.templ}`);
+  serverRegions(o, c.name, b);
+}
+
+function glyphKind(c: Glyph, o: Out) {
+  const H = head(c.name), b = glyphBodies(c);
+  jsFiles(o, c, H, glyphJs(c));
+  o.files.set(`webcomponent/src/components/${c.name}.ts`, `// ${H}
+import { renderIcon } from "../ui/icon/icon.wc";
+import type { IconSize } from "../ui/icon/icon.shared";
+import { LUCIDE } from "./lucide-icons";
+
+${b.wc}`);
+  o.files.set(`templ/authfly/${c.name.replace(/-/g, "_")}.templ`, `// ${H}
+package authfly
+
+import "github.com/authfly/authkit/packages/ui/templ/ui/icon"
+
+${b.templ}`);
+  serverRegions(o, c.name, b);
+}
+
 /** packages/ui-relative path -> content (whole files) and region bodies. */
 export async function componentOutputs(): Promise<Out> {
   const o: Out = { files: new Map(), regions: new Map() };
   for (const c of await componentSpecs()) {
     if (c.kind === "surface") surface(c, o);
     else if (c.kind === "message") messageKind(c, o);
-    else pillKind(c, o);
+    else if (c.kind === "pill") pillKind(c, o);
+    else if (c.kind === "heading") headingKind(c, o);
+    else glyphKind(c, o);
   }
   return o;
 }

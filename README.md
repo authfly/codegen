@@ -39,9 +39,10 @@ Text with a tag, token classes or the muted skin), `title`, `badge`, `separator`
 `item(field, var)`, `button` `type`, `form` `testid`, boolean props. 
 
 Middle layer (`src/dsl-components.ts`, `src/components.ts`, templates per kind in `src/emit/components.ts`):
-**Card** (kind `surface`), **Alert** (kind `message`), **Badge** + **IconBadge** (kind `pill` with its `tile`) are
-generated. Still hand-written in authkit: Stack/Group/Form, Field, Title, LucideIcon, WidgetHead/Messages/_parts,
-props, the rest of the server macro files and the templ components/helpers; next: specs for those.
+**Card** (kind `surface`), **Alert** (kind `message`), **Badge** + **IconBadge** (kind `pill` with its `tile`),
+**Title** (kind `heading`) and **LucideIcon** (kind `glyph`, server macro `icon`) are generated. Still hand-written in
+authkit: Stack/Group/Form, Field, WidgetHead/Messages/_parts, props, the rest of the server macro files (icon/box/text
+primitive wrappers, layout, field, head, messages) and the templ components/helpers; next: specs for those.
 
 ## Brand registry hosting
 
