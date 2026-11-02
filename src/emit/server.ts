@@ -14,7 +14,7 @@ export function emitServer(t: Srv, w: Widget): string {
     switch (e.k) {
       case "prop": return n2(e.n);
       case "lab": return `${get("l", e.n)} ${or} ''`;
-      case "item": return `${get("pr", e.n)} ${or} ''`;
+      case "item": return `${get(e.v ?? "pr", e.n)} ${or} ''`;
       case "lit": return s(e.v);
       case "eq": return `(${x(e.a)}) ${L ? "===" : "=="} ${s(e.v)}`;
       case "iff": return t === "jinja2" ? `${x(e.a)} if ${c(e.c)} else ${x(e.b)}` : `${c(e.c)} ? ${x(e.a)} : ${x(e.b)}`;
@@ -24,7 +24,7 @@ export function emitServer(t: Srv, w: Widget): string {
     }
   };
   // id and error are bound once (see preamble)
-  const n2 = (n: string) => (n === "id" ? (L ? "$id" : "id") : n === "error" ? (L ? "$error" : "error") : `${get("p", n)} ${or} ${s(defs.get(n) ?? "")}`);
+  const n2 = (n: string) => (n === "id" ? (L ? "$id" : "id") : n === "error" ? (L ? "$error" : "error") : `${get("p", n)} ${or} ${typeof defs.get(n) === "boolean" ? String(defs.get(n)) : s(String(defs.get(n) ?? ""))}`);
   const c = (e: E) => (e.k === "eq" ? x(e) : x(e)); // truthiness: '' is false in all three
   const dict = (o: [string, string][]) => (L ? `[${o.map(([k, v]) => `${s(k)} => ${v}`).join(", ")}]` : `{${o.map(([k, v]) => `${s(k)}: ${v}`).join(", ")}}`);
   const ax = (a: Attrs): [string, string][] => Object.entries(a).map(([k, v]) => [k, v.k === "lit" ? s(v.v) : `${x(v).replace(/ (\?\?|or) ''$/, "")} ${or} ${none}`]);
@@ -55,10 +55,11 @@ export function emitServer(t: Srv, w: Widget): string {
       }
       case "each": {
         const list = `${get("p", n.list)} ${or} []`;
-        return L ? `{foreach ${list} as $pr}${kids(n.kids)}{/foreach}` : `{%- for pr in ${list} -%}\n${kids(n.kids)}\n{%- endfor -%}`;
+        const v = n.as ?? "pr";
+        return L ? `{foreach ${list} as $${v}}${kids(n.kids)}{/foreach}` : `{%- for ${v} in ${list} -%}\n${kids(n.kids)}\n{%- endfor -%}`;
       }
       case "stack": { const [d, v] = capture(kids(n.kids)); return `${d}${call("stack", [s(n.gap), "''", "''", "''", dict(ax(n.attrs)), v])}`; }
-      case "form": { const [d, v] = capture(kids(n.kids)); return `${d}\n${call("form", [n2(n.action), s(n.extra), dict([["data-testid", s("authfly-form")]]), v])}`; }
+      case "form": { const [d, v] = capture(kids(n.kids)); return `${d}\n${call("form", [n2(n.action), s(n.extra), dict([["data-testid", s(n.testid)]]), v])}`; }
       case "hidden": return call("hidden", [s(n.name), x(n.value)]);
       case "field": {
         const input = dict([["type", x(n.type)], ["name", s(n.name)], ...(n.required ? [["required", "true"]] as [string, string][] : []), ["attrs", dict([...(n.inputmode ? [["inputmode", s(n.inputmode)]] as [string, string][] : []), ["autocomplete", x(n.autocomplete)]])]]);
@@ -87,7 +88,7 @@ export function emitServer(t: Srv, w: Widget): string {
       }
       case "button": {
         const a = dict([...ax(n.attrs), ...(n.testid ? [["data-testid", s(n.testid)]] as [string, string][] : [])]);
-        const head = [n.href ? x(n.href) : "''", "''", skin("button", n.variant, n.extra), a];
+        const head = [n.href ? x(n.href) : "''", n.type ? s(n.type) : "''", skin("button", n.variant, n.extra), a];
         if (n.kids.length === 1 && n.kids[0].k === "text") return call("button", [...head, esc(x(n.kids[0].v))]);
         const [d, v] = capture(n.kids.map(node).join(""));
         return `${d}\n${call("button", [...head, v])}`;
@@ -99,6 +100,22 @@ export function emitServer(t: Srv, w: Widget): string {
         return `${d}\n${call("text", ["''", `${L ? "afText" : "af_text"}('muted')`, L ? "[]" : "{}", v])}`;
       }
       case "icon": return call("icon", [x(n.name)]);
+      case "group": { const [d, v] = capture(kids(n.kids)); return `${d}${call("group", [s(n.gap), "''", s(n.justify ?? ""), "''", L ? "[]" : "{}", v])}`; }
+      case "el": {
+        const cl = n.muted ? `${L ? "afText" : "af_text"}('muted')` : s(n.cls);
+        const head = [s(n.tag ?? ""), cl, dict(ax(n.attrs))];
+        const f = n.prim === "Box" ? "box" : "text";
+        if (n.kids.length === 1 && n.kids[0].k === "text") return call(f, [...head, esc(x(n.kids[0].v))]);
+        const [d, v] = capture(n.kids.map(node).join(""));
+        return `${d}${call(f, [...head, v])}`;
+      }
+      case "title": return call("title", [String(n.level), `${L ? "$id . " : "id ~ "}${s("-" + n.idSuffix)}`, L ? "null" : "''", x(n.label)]);
+      case "badge": return call("badge", [x(n.variant), s(n.testid ?? ""), x(n.label)]);
+      case "separator": return t === "twig"
+        ? `{{ include('ui/separator/Separator.html.twig', {decorative: true, class: ${s(n.cls)}}, with_context = false) }}`
+        : L ? `{include '../ui/separator/Separator.latte', decorative: true, class: ${s(n.cls)}}`
+          : `{{ af.prim('ui/separator/separator.html.j2', {'Decorative': true, 'Class': ${s(n.cls)}}) }}`;
+      case "sp": return " ";
       case "iconBadge": return call(L ? "iconBadge" : "icon_badge", [x(n.icon), x(n.tone)]);
       case "para": return call("text", ["''", s(n.cls), dict([["data-testid", s(n.testid)]]), esc(x(n.v))]);
       case "text": return outp(x(n.v));

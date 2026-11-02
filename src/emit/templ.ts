@@ -12,22 +12,25 @@ const imports = (ms: string[]) => {
 export function emitTempl(w: Widget): string {
   const defs = new Map(w.props.filter((p) => p.def !== undefined).map((p) => [p.name, p.def!]));
   const q = (v: string) => JSON.stringify(v);
-  const pr = (n: string) => (n === "id" ? "id" : n === "error" ? "errs" : defs.get(n) ? `or(Str(p.${G(n)}), ${q(defs.get(n)!)})` : `Str(p.${G(n)})`);
+  const bools = new Set(w.props.filter((p) => p.ts === "boolean").map((p) => p.name));
+  const pr = (n: string) => (n === "id" ? "id" : n === "error" ? "errs" : bools.has(n) ? `Bool(p.${G(n)})` : defs.get(n) ? `or(Str(p.${G(n)}), ${q(String(defs.get(n)))})` : `Str(p.${G(n)})`);
   const x = (e: E): string => {
     switch (e.k) {
       case "prop": return pr(e.n);
       case "lab": return `Lab(labels, ${q(e.n)})`;
-      case "item": return `pr.${G(e.n)}`;
+      case "item": return `${e.v ?? "pr"}.${G(e.n)}`;
       case "lit": return q(e.v);
       case "eq": return `${x(e.a)} == ${q(e.v)}`;
-      case "iff": return `map[bool]string{true: ${x(e.a)}, false: ${x(e.b)}}[${x(e.c)}]`;
+      case "iff":
+        if (!isBool(e.c) && JSON.stringify(e.c) === JSON.stringify(e.a)) return `or(${x(e.a)}, ${x(e.b)})`;
+        return `map[bool]string{true: ${x(e.a)}, false: ${x(e.b)}}[${cond(e.c)}]`;
       case "cat": return e.parts.map(x).join(" + ");
       case "or": return x(e.a); // Lab / Str already default to ""
       case "let": return e.n;
     }
   };
   const lets = new Map((w.lets ?? []).map((l) => [l.name, l.e]));
-  const isBool = (e: E): boolean => e.k === "eq" || (e.k === "let" && isBool(lets.get(e.n)!));
+  const isBool = (e: E): boolean => e.k === "eq" || (e.k === "prop" && bools.has(e.n)) || (e.k === "let" && isBool(lets.get(e.n)!));
   const cond = (e: E) => (isBool(e) ? x(e) : `${x(e)} != ""`);
   const A = (a: [string, string][]) => `A(${a.map(([k, v]) => `${q(k)}, ${v}`).join(", ")})`;
   const ax = (a: Attrs): [string, string][] => Object.entries(a).map(([k, v]) => [k, x(v)]);
@@ -41,9 +44,9 @@ export function emitTempl(w: Widget): string {
       }
       case "messages": return [I(`@Messages(id, errs, ${n.info ? x(n.info) : '""'})`)];
       case "when": return [I(`if ${cond(n.c)} {`), ...kids(n.kids, ind + "\t"), ...(n.els ? [I("} else {"), ...kids(n.els, ind + "\t")] : []), I("}")];
-      case "each": return [I(`for _, pr := range Items(p.${G(n.list)}) {`), ...kids(n.kids, ind + "\t"), I("}")];
-      case "stack": return [I(`@Stack(${q(n.gap)}, "", "", "", ${A(ax(n.attrs))}) {`), ...kids(n.kids, ind + "\t"), I("}")];
-      case "form": return [I(`@Form(${pr(n.action)}, ${q(n.extra)}, A("data-testid", "authfly-form")) {`), ...kids(n.kids, ind + "\t"), I("}")];
+      case "each": return [I(`for _, ${n.as ?? "pr"} := range Items(p.${G(n.list)}) {`), ...kids(n.kids, ind + "\t"), I("}")];
+      case "stack": return [I(`@Stack(${q(n.gap)}, "", "", "", ${Object.keys(n.attrs).length ? A(ax(n.attrs)) : "nil"}) {`), ...kids(n.kids, ind + "\t"), I("}")];
+      case "form": return [I(`@Form(${pr(n.action)}, ${q(n.extra)}, A("data-testid", ${q(n.testid)})) {`), ...kids(n.kids, ind + "\t"), I("}")];
       case "hidden": return [I(`@Hidden(${q(n.name)}, ${x(n.value)})`)];
       case "field": {
         const fp = `FieldProps{Label: ${x(n.label)}, HtmlFor: id + ${q("-" + n.name)}, ${n.hint ? `Hint: ${x(n.hint)}, ` : ""}FormError: formErr}`;
@@ -65,12 +68,25 @@ export function emitTempl(w: Widget): string {
         if (n.href && n.testid && n.kids.length === 1 && n.kids[0].k === "text" && !Object.keys(n.attrs).length)
           return [I(`@buttonLink(${x(n.href)}, ${cls}, ${q(n.testid)}, ${x(n.kids[0].v)})`)];
         const at = [...ax(n.attrs), ...(n.testid ? [["data-testid", q(n.testid)]] as [string, string][] : [])];
-        return [I(`@button.Button(button.ButtonProps{${n.href ? `Href: ${x(n.href)}, ` : ""}Class: ${cls}${at.length ? `, Attrs: ${A(at)}` : ""}}) {`), ...kids(n.kids, ind + "\t"), I("}")];
+        return [I(`@button.Button(button.ButtonProps{${n.type ? `Type: ${q(n.type)}, ` : ""}${n.href ? `Href: ${x(n.href)}, ` : ""}Class: ${cls}${at.length ? `, Attrs: ${A(at)}` : ""}}) {`), ...kids(n.kids, ind + "\t"), I("}")];
       }
       case "submit": return [I(`@submit(ButtonSkin("default", "w-full"), ${q(n.testid)}, ${x(n.label)})`)];
       case "link": return [I(`@authLink(${x(n.href)}, LinkSkin(${n.extra ? q(n.extra) : ""}), ${q(n.testid)}, ${x(n.label)})`)];
       case "foot": return [I(`@footLine(${x(n.lead)}, ${x(n.href)}, ${q(n.testid)}, ${x(n.label)})`)];
       case "icon": return [I(`@LucideIcon(${x(n.name)}, "")`)];
+      case "group": return [I(`@Group(${q(n.gap)}, "", ${q(n.justify ?? "")}, "", nil) {`), ...kids(n.kids, ind + "\t"), I("}")];
+      case "el": {
+        const f = n.prim === "Box" ? "box" : "text";
+        const at = ax(n.attrs);
+        const props = [...(n.tag ? [`Tag: ${q(n.tag)}`] : []), ...(n.muted ? ["Class: TextMuted"] : n.cls ? [`Class: ${q(n.cls)}`] : []), ...(at.length ? [`Attrs: ${A(at)}`] : [])].join(", ");
+        const lines: string[] = [];
+        for (const k of n.kids) { if (k.k === "sp") lines[lines.length - 1] += '{ " " }'; else lines.push(...node(k, ind + "\t")); }
+        return [I(`@${f}.${n.prim}(${f}.${n.prim}Props{${props}}) {`), ...lines, I("}")];
+      }
+      case "title": return [I(`@Title(${n.level}, id+${q("-" + n.idSuffix)}, "", ${x(n.label)})`)];
+      case "badge": return [I(`@Badge(${x(n.variant)}, ${q(n.testid ?? "")}, ${x(n.label)})`)];
+      case "separator": return [I(`@separator.Separator(separator.SeparatorProps{Decorative: true, Class: ${q(n.cls)}})`)];
+      case "sp": return [I('{ " " }')];
       case "iconBadge": return [I(`@IconBadge(${x(n.icon)}, ${x(n.tone)})`)];
       case "para": return [I(`@text.Text(text.TextProps{Class: ${q(n.cls)}, Attrs: A("data-testid", ${q(n.testid)})}) {`), I(`\t{ ${x(n.v)} }`), I("}")];
       case "text": return [I(`{ ${x(n.v)} }`)];
@@ -82,10 +98,10 @@ export function emitTempl(w: Widget): string {
     `// Code generated by authfly/codegen from specs/widgets/${w.name}.def.ts. DO NOT EDIT.`,
     ...w.doc.split("\n").map((l) => `// ${l}`),
     "package authfly", "",
-    ...imports(["button", "checkbox", "label", "text"].filter((m) => src.includes(`@${m}.`))),
+    ...imports(["box", "button", "checkbox", "label", "separator", "text"].filter((m) => src.includes(`@${m}.`))),
     `templ ${w.component}(p ${w.component}Props) {`,
     ...(w.props.some((p) => p.name === "error")
-      ? ["\t{{ id, labels, errs := Str(p.Id), p.Labels, Str(p.Error) }}", "\t{{ formErr := errorID(id, errs) }}"]
+      ? ["\t{{ id, labels, errs := Str(p.Id), p.Labels, Str(p.Error) }}", ...(src.includes("formErr") ? ["\t{{ formErr := errorID(id, errs) }}"] : [])]
       : ["\t{{ id, labels := Str(p.Id), p.Labels }}"]),
     ...(w.lets ?? []).map((l) => `\t{{ ${l.name} := ${x(l.e)} }}`),
     `\t@Card(WidgetCardSkin(${w.card?.extra ? q(w.card.extra) : ""}), landmark(id, Str(p.LandmarkLabel), "data-testid", "authfly-${w.name}"${ax(w.card?.attrs ?? {}).map(([k, v]) => `, ${q(k)}, ${v}`).join("")})) {`,

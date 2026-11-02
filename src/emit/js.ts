@@ -10,7 +10,7 @@ export function jsExpr(e: E, ref: (k: "prop" | "lab" | "let", n: string) => stri
     switch (x.k) {
       case "prop": return ref("prop", x.n);
       case "lab": return ref("lab", x.n);
-      case "item": return `pr.${x.n}`;
+      case "item": return `${x.v ?? "pr"}.${x.n}`;
       case "lit": return s(x.v);
       case "eq": return `${r(x.a)} === ${s(x.v)}`;
       case "iff": return `${r(x.c)} ? ${r(x.a)} : ${r(x.b)}`;
@@ -83,19 +83,48 @@ export function emitJs(t: Js, w: Widget): string {
       }
       case "each": {
         const list = `${ref("prop", n.list)} ?? []`;
-        const k = n.kids[0];
-        if (t === "react") return [I(`{(${list}).map((pr) => (`), ...node(k, ind + "  ", ["key={pr.id}"]), I("))}")];
-        if (t === "solid") return [I(`<For each={${list}}>{(pr) => (`), ...node(k, ind + "  "), I(")}</For>")];
-        if (t === "svelte") return [I(`{#each ${list} as pr (pr.id)}`), ...node(k, ind + "  "), I("{/each}")];
-        return node(k, ind, [`v-for="pr in ${list}"`, `:key="pr.id"`]);
+        const k = n.kids[0]; const v = n.as ?? "pr";
+        const one = k.k === "el" && elInline(k);
+        if (t === "react") return [I(`{(${list}).map((${v}) => (`), ...node(k, ind + "  ", [`key={${v}.id}`]), I("))}")];
+        if (t === "solid") return one ? [I(`<For each={${list}}>{(${v}) => ${node(k, "")[0]}}</For>`)] : [I(`<For each={${list}}>{(${v}) => (`), ...node(k, ind + "  "), I(")}</For>")];
+        if (t === "svelte") return one ? [I(`{#each ${list} as ${v} (${v}.id)}${node(k, "")[0]}{/each}`)] : [I(`{#each ${list} as ${v} (${v}.id)}`), ...node(k, ind + "  "), I("{/each}")];
+        return node(k, ind, [`v-for="${v} in ${list}"`, `:key="${v}.id"`]);
       }
+      case "group": used.add("Group");
+        return [I(`<Group ${[...extra, `gap="${n.gap}"`, ...(n.justify ? [`justify="${n.justify}"`] : [])].join(" ")}>`), ...kids(n.kids, ind + "  "), I("</Group>")];
+      case "el": {
+        used.add(n.prim); if (n.muted) skins.add("textSkin");
+        const ent = Object.entries(n.attrs);
+        const c = n.muted ? [code(cls, "textSkin.muted")] : n.cls ? [`${cls}="${n.cls}"`] : [];
+        const tg = n.tag ? [`tag="${n.tag}"`] : [];
+        const mid = [...ent.filter(([k]) => k.startsWith("aria-")).map(([k, v]) => at(k, v)), ...c, ...ent.filter(([k]) => !k.startsWith("aria-")).map(([k, v]) => at(k, v))];
+        const a = (t === "react" ? [...tg, ...extra, ...mid] : [...extra, ...tg, ...mid]).join(" ");
+        const open = `<${n.prim}${a ? " " + a : ""}>`, close = `</${n.prim}>`;
+        const spc = t === "react" || t === "solid" ? '{" "}' : " ";
+        const inl = (ns: N[]) => ns.map((k) => (k.k === "sp" ? spc : node(k, "").map((l) => l.trim()).join(""))).join("");
+        if (t === "react") {
+          if (n.kids.length === 1 && n.kids[0].k === "text") return [I(`${open}${inl(n.kids)}${close}`)];
+          const lines: string[] = [];
+          for (const k of n.kids) { if (k.k === "sp") lines[lines.length - 1] += spc; else lines.push(...node(k, ind + "  ")); }
+          return [I(open), ...lines, I(close)];
+        }
+        if (elInline(n)) return [I(`${open}${inl(n.kids)}${close}`)];
+        return [I(open), ...kids(n.kids, ind + "  "), I(close)];
+      }
+      case "title": used.add("Title");
+        return [I(`<Title ${[...extra, code("level", String(n.level)), code("id", `\`\${${ref("prop", "id")}}-${n.idSuffix}\``)].join(" ")}>${out(n.label)}</Title>`)];
+      case "badge": used.add("Badge");
+        return [I(`<Badge ${[...extra, at("variant", n.variant), ...(n.testid ? [`data-testid="${n.testid}"`] : [])].join(" ")}>${out(n.label)}</Badge>`)];
+      case "separator": used.add("Separator");
+        return [I(`<Separator ${[...extra, "decorative", `${cls}="${n.cls}"`].join(" ")} />`)];
+      case "sp": return [I(t === "react" || t === "solid" ? '{" "}' : " ")];
       case "stack": used.add("Stack");
         return [I(`<Stack ${[...extra, `gap="${n.gap}"`, ...attrs(n.attrs)].join(" ")}>`), ...kids(n.kids, ind + "  "), I("</Stack>")];
       case "form": used.add("Form");
         if (n.errorId && (t === "react" || t === "solid")) used.add("errorIdOf");
         return [I(`<Form ${[...extra, 'method="post"', code("action", ref("prop", n.action)),
           ...(n.errorId ? [code("errorId", t === "react" || t === "solid" ? `errorIdOf(${ref("prop", "id")}, ${ref("prop", "error")})` : `${ref("prop", "error")} ? \`\${${ref("prop", "id")}}-error\` : undefined`)] : []),
-          ...(n.extra ? [`${cls}="${n.extra}"`] : []), 'data-testid="authfly-form"'].join(" ")}>`), ...kids(n.kids, ind + "  "), I("</Form>")];
+          ...(n.extra ? [`${cls}="${n.extra}"`] : []), `data-testid="${n.testid}"`].join(" ")}>`), ...kids(n.kids, ind + "  "), I("</Form>")];
       case "hidden":
         if (t === "react" || t === "solid") { used.add("Hidden"); return [I(`<Hidden name="${n.name}" ${at("value", n.value)} />`)]; }
         used.add("Input"); return [I(`<Input type="hidden" name="${n.name}" ${at("value", n.value)} />`)];
@@ -138,7 +167,7 @@ export function emitJs(t: Js, w: Widget): string {
       }
       case "button": {
         used.add("Button"); skins.add("buttonSkin");
-        const a = [...extra, ...(n.href ? [at("href", n.href)] : []), code(cls, `buttonSkin(${q}${n.variant}${q}, ${q}${n.extra}${q})`), ...attrs(n.attrs), ...(n.testid ? [`data-testid="${n.testid}"`] : [])];
+        const a = [...extra, ...(n.type ? [`type="${n.type}"`] : []), ...(n.href ? [at("href", n.href)] : []), code(cls, `buttonSkin(${q}${n.variant}${q}, ${q}${n.extra}${q})`), ...attrs(n.attrs), ...(n.testid ? [`data-testid="${n.testid}"`] : [])];
         const inner = n.kids.length === 1 && n.kids[0].k === "text" ? out(n.kids[0].v) : null;
         if (inner) return [I(`<Button ${a.join(" ")}>${inner}</Button>`)];
         if (t === "react") return [I(`<Button ${a.join(" ")}>`), ...kids(n.kids, ind + "  "), I("</Button>")];
@@ -163,7 +192,8 @@ export function emitJs(t: Js, w: Widget): string {
       case "text": return [I(out(n.v))];
     }
   };
-  const isLeaf = (n: N) => ["button", "link", "submit", "foot", "text", "icon", "hidden", "para", "iconBadge"].includes(n.k);
+  const isLeaf = (n: N) => ["button", "link", "submit", "foot", "text", "icon", "hidden", "para", "iconBadge", "badge", "sp"].includes(n.k);
+  const elInline = (n: N): boolean => n.k === "el" && (n.inline ?? n.kids.every((k) => ["text", "icon", "badge", "sp"].includes(k.k)));
 
   used.add("Card"); skins.add("widgetCardSkin");
   const lmProps = t === "react" || t === "solid" ? `{...landmark(${ref("prop", "id")}, ${ref("prop", "landmarkLabel")})}` : t === "vue" ? 'v-bind="lm"' : "{...lm}";
@@ -180,9 +210,12 @@ export function emitJs(t: Js, w: Widget): string {
       ...(sol ? [`import { ${["For", "Show"].filter((s) => new RegExp(`<${s}[ >]`).test(body.join("\n"))).concat("mergeProps").join(", ")} } from "solid-js";`] : []),
       `import { Card } from "../components/card";`,
       ...(["Stack", "Group", "Form"].some((s) => used.has(s)) ? [`import { ${["Stack", "Group", "Form"].filter((s) => used.has(s)).join(", ")} } from "../components/layout";`] : []),
+      ...(used.has("Separator") ? [ui("Separator", "separator")] : []),
       ...(used.has("Field") ? [`import { Field } from "../components/field";`] : []),
+      ...(used.has("Title") ? [`import { Title } from "../components/title";`] : []),
+      ...(["Badge", "IconBadge"].some((s) => used.has(s)) ? [`import { ${["Badge", "IconBadge"].filter((s) => used.has(s)).join(", ")} } from "../components/badge";`] : []),
       ...(used.has("LucideIcon") ? [`import { LucideIcon } from "../components/lucide-icon";`] : []),
-      ...(used.has("IconBadge") ? [`import { IconBadge } from "../components/badge";`] : []),
+      ...(used.has("Box") ? [ui("Box", "box")] : []),
       ...(used.has("Text") ? [ui("Text", "text")] : []), ...(used.has("Button") ? [ui("Button", "button")] : []),
       ...(used.has("Link") ? [ui("Link", "link")] : []), ...(used.has("Input") ? [ui("Input", "input")] : []),
       ...(used.has("Label") ? [ui("Label", "label")] : []), ...(used.has("Checkbox") ? [ui("Checkbox", "checkbox")] : []),
@@ -204,8 +237,8 @@ export function emitJs(t: Js, w: Widget): string {
   const P = (s: string) => s[0].toUpperCase() + s.slice(1);
   const imp = [
     `import Card from "../components/Card.${ext}";`,
-    ...["Stack", "Group", "Form", "Field", "LucideIcon", "IconBadge"].filter((s) => used.has(s)).map((s) => `import ${s} from "../components/${s}.${ext}";`),
-    ...["text", "button", "link", "input", "label", "checkbox"].filter((s) => used.has(P(s))).map((s) => `import ${P(s)} from "../ui/${s}/${P(s)}.${ext}";`),
+    ...["Stack", "Group", "Form", "Field", "Title", "Badge", "LucideIcon", "IconBadge"].filter((s) => used.has(s)).map((s) => `import ${s} from "../components/${s}.${ext}";`),
+    ...["box", "text", "button", "link", "input", "label", "checkbox", "separator"].filter((s) => used.has(P(s))).map((s) => `import ${P(s)} from "../ui/${s}/${P(s)}.${ext}";`),
     ...["WidgetHead", "Messages"].filter((s) => used.has(s)).map((s) => `import ${s} from "./${s}.${ext}";`),
     `import { ${skinList} } from "../skin/skin";`,
     `import type { ${w.component}Props } from "./props";`,
