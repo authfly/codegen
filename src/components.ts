@@ -6,7 +6,8 @@
 // `codegen:begin <name>` / `codegen:end <name>` comments; the rest of that file stays hand-written.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { Component } from "./dsl-components";
+import type { Component, Message, Pill } from "./dsl-components";
+import { camel, messageBodies, messageJs, pillBodies, pillJs } from "./emit/components";
 
 const specs = join(import.meta.dir, "../specs/components");
 const pascal = (w: string) => w.split("-").map((s) => s[0].toUpperCase() + s.slice(1)).join("");
@@ -21,7 +22,7 @@ export async function componentSpecs(): Promise<Component[]> {
 
 type Out = { files: Map<string, string>; regions: Map<string, Map<string, { open: string; close: string; body: string }>> };
 
-function surface(c: Component, o: Out) {
+function surface(c: Extract<Component, { kind: "surface" }>, o: Out) {
   const P = pascal(c.name), H = head(c.name), sk = `${c.name}Skin`, t = c.tag;
   o.files.set(`react/src/components/${c.name}.tsx`, `// ${H}
 // Widget surface: a <${t}> landmark (Box) with the ${c.skin} skin.
@@ -85,10 +86,7 @@ templ ${P}(class string, attrs templ.Attributes) {
 	}
 }
 `);
-  const reg = (rel: string, open: string, close: string, body: string) => {
-    if (!o.regions.has(rel)) o.regions.set(rel, new Map());
-    o.regions.get(rel)!.set(c.name, { open, close, body });
-  };
+  const reg = region(o, c.name);
   reg("twig/authfly/components.html.twig", `{#- codegen:begin ${c.name}: ${H} -#}`, `{#- codegen:end ${c.name} -#}`,
     `{%- macro ${c.name}(class, attrs, children) -%}
 {{ _self.box('${t}', af_skin('${c.skin}', class), attrs, children) }}
@@ -101,10 +99,82 @@ templ ${P}(class string, attrs templ.Attributes) {
     `{%- macro ${c.name}(cls='', attrs={}, children='') -%}{{ box('${t}', af_skin('${c.skin}', cls), attrs, children) }}{%- endmacro -%}`);
 }
 
+function region(o: Out, name: string) {
+  return (rel: string, open: string, close: string, body: string) => {
+    if (!o.regions.has(rel)) o.regions.set(rel, new Map());
+    o.regions.get(rel)!.set(name, { open, close, body });
+  };
+}
+
+/** Server macro regions (Twig, Latte, Jinja2) with the codegen:begin/end markers. */
+function serverRegions(o: Out, name: string, b: { twig: string; latte: string; jinja2: string }) {
+  const H = head(name), reg = region(o, name);
+  reg("twig/authfly/components.html.twig", `{#- codegen:begin ${name}: ${H} -#}`, `{#- codegen:end ${name} -#}`, b.twig);
+  reg("latte/authfly/components.latte", `{* codegen:begin ${name}: ${H} *}`, `{* codegen:end ${name} *}`, b.latte);
+  reg("jinja2/authfly/components.html.j2", `{#- codegen:begin ${name}: ${H} -#}`, `{#- codegen:end ${name} -#}`, b.jinja2);
+}
+
+/** Header line in a JS-family file: first line (tsx), first line of the script block (vue, svelte). */
+const hdr = (kind: "tsx" | "vue" | "svelte", H: string, body: string) =>
+  kind === "tsx" ? `// ${H}\n${body}`
+  : kind === "vue" ? body.replace(`<script setup lang="ts">\n`, `<script setup lang="ts">\n// ${H}\n`)
+  : body.replace(`<script lang="ts">\n`, `<script lang="ts">\n  // ${H}\n`);
+
+function messageKind(c: Message, o: Out) {
+  const P = pascal(c.name), H = head(c.name), j = messageJs(c), b = messageBodies(c), sk = `${camel(c.skin)}Skin`;
+  o.files.set(`react/src/components/${c.name}.tsx`, hdr("tsx", H, j.react));
+  o.files.set(`solid/src/components/${c.name}.tsx`, hdr("tsx", H, j.solid));
+  o.files.set(`vue/src/components/${P}.vue`, hdr("vue", H, j.vue));
+  o.files.set(`svelte/src/components/${P}.svelte`, hdr("svelte", H, j.svelte));
+  o.files.set(`webcomponent/src/components/${c.name}.ts`, `// ${H}
+import type { Children } from "../utils/wc";
+import { renderBox } from "../ui/box/box.wc";
+import { ${sk}, type Tone } from "../skin/skin";
+import { lucideIcon } from "./index";
+
+${b.wc}`);
+  o.files.set(`templ/authfly/${c.name.replace(/-/g, "_")}.templ`, `// ${H}
+package authfly
+
+import "github.com/authfly/authkit/packages/ui/templ/ui/box"
+
+${b.templ}`);
+  serverRegions(o, c.name, b);
+}
+
+function pillKind(c: Pill, o: Out) {
+  const P = pascal(c.name), T = pascal(c.tile.name), H = head(c.name), j = pillJs(c), b = pillBodies(c);
+  const sk = `${camel(c.skin)}Skin`, tsk = `${camel(c.tile.skin)}Skin`;
+  o.files.set(`react/src/components/${c.name}.tsx`, hdr("tsx", H, j.react));
+  o.files.set(`solid/src/components/${c.name}.tsx`, hdr("tsx", H, j.solid));
+  o.files.set(`vue/src/components/${P}.vue`, hdr("vue", H, j.vue));
+  o.files.set(`vue/src/components/${T}.vue`, hdr("vue", H, j.vueTile));
+  o.files.set(`svelte/src/components/${P}.svelte`, hdr("svelte", H, j.svelte));
+  o.files.set(`svelte/src/components/${T}.svelte`, hdr("svelte", H, j.svelteTile));
+  o.files.set(`webcomponent/src/components/${c.name}.ts`, `// ${H}
+import type { Children } from "../utils/wc";
+import { renderText, type TextElementProps } from "../ui/text/text.wc";
+import { ${sk}, ${tsk}, type BadgeVariant } from "../skin/skin";
+import { lucideIcon } from "./index";
+
+${b.wc}`);
+  o.files.set(`templ/authfly/${c.name.replace(/-/g, "_")}.templ`, `// ${H}
+package authfly
+
+import "github.com/authfly/authkit/packages/ui/templ/ui/text"
+
+${b.templ}`);
+  serverRegions(o, c.name, b);
+}
+
 /** packages/ui-relative path -> content (whole files) and region bodies. */
 export async function componentOutputs(): Promise<Out> {
   const o: Out = { files: new Map(), regions: new Map() };
-  for (const c of await componentSpecs()) if (c.kind === "surface") surface(c, o);
+  for (const c of await componentSpecs()) {
+    if (c.kind === "surface") surface(c, o);
+    else if (c.kind === "message") messageKind(c, o);
+    else pillKind(c, o);
+  }
   return o;
 }
 

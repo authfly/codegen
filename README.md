@@ -38,10 +38,10 @@ in all 9 targets. DSL growth per widget: sign-up `checkbox`, `field` `hint` / `a
 Text with a tag, token classes or the muted skin), `title`, `badge`, `separator`, `group`, `sp`, `each` `as` +
 `item(field, var)`, `button` `type`, `form` `testid`, boolean props. 
 
-Middle layer (`src/dsl-components.ts`, `src/components.ts`): **Card** is generated (kind `surface`: a primitive with a
-default tag and a skin recipe). Still hand-written in authkit: the rest of the middle layer
-(Stack/Group/Form, Field, Title, Alert, Badge, IconBadge, LucideIcon, WidgetHead/Messages/_parts, the server
-macro files and templ components/helpers); next: specs for those.
+Middle layer (`src/dsl-components.ts`, `src/components.ts`, templates per kind in `src/emit/components.ts`):
+**Card** (kind `surface`), **Alert** (kind `message`), **Badge** + **IconBadge** (kind `pill` with its `tile`) are
+generated. Still hand-written in authkit: Stack/Group/Form, Field, Title, LucideIcon, WidgetHead/Messages/_parts,
+props, the rest of the server macro files and the templ components/helpers; next: specs for those.
 
 ## Brand registry hosting
 
