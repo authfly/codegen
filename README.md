@@ -40,10 +40,13 @@ Text with a tag, token classes or the muted skin), `title`, `badge`, `separator`
 
 Middle layer (`src/dsl-components.ts`, `src/components.ts`, templates per kind in `src/emit/components.ts`):
 **Card** (kind `surface`), **Alert** (kind `message`), **Badge** + **IconBadge** (kind `pill` with its `tile`),
-**Title** (kind `heading`), **LucideIcon** (kind `glyph`, server macro `icon`) the layout (kind `layout`: Stack, Group, Form, Vue/Svelte `layout.ts` tables, server `box` / `text` wrappers) and the
-field (kind `field`: Field, Hidden, the form-error context, templ `TextInput`) are generated. Still hand-written in
-authkit: WidgetHead/Messages/_parts (Hidden there is a re-export), props, Jinja2 `prim`, the server head / messages /
-link / button macros and the templ helpers; next: specs for those.
+**Title** (kind `heading`), **LucideIcon** (kind `glyph`, server macro `icon`) the layout (kind `layout`: Stack, Group, Form, Vue/Svelte `layout.ts` tables, server `box` / `text` wrappers), the
+field (kind `field`: Field, Hidden, the form-error context, templ `TextInput`) and the parts (kind `parts`:
+WidgetHead / head, Messages, the React / Solid / WC `_parts`, templ `components.templ` + `blocks.templ` helpers,
+server head / messages / link / button macros, the JS component indexes) are generated: the whole middle layer.
+Kept hand-written in authkit on purpose: `props.ts` / `props.go` (the xgen widget prop API), `attrs.go` / `skin.go`
+and the PHP / Python skin + template extensions (runtime helpers over the generated skin tables), Jinja2 `prim`
+(engine glue: a one-line include shim) and the server files' leading doc comments.
 
 ## Brand registry hosting
 

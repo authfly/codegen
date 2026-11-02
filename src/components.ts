@@ -6,8 +6,8 @@
 // `codegen:begin <name>` / `codegen:end <name>` comments; the rest of that file stays hand-written.
 import { existsSync, readFileSync, readdirSync, writeFileSync } from "fs";
 import { join } from "path";
-import type { Component, FieldKind, Glyph, Heading, Layout, Message, Pill } from "./dsl-components";
-import { camel, fieldBodies, fieldFiles, layoutBodies, layoutJs, glyphBodies, glyphJs, headingBodies, headingJs, messageBodies, messageJs, pillBodies, pillJs } from "./emit/components";
+import type { Component, FieldKind, Parts, Glyph, Heading, Layout, Message, Pill } from "./dsl-components";
+import { camel, partsBodies, partsFiles, fieldBodies, fieldFiles, layoutBodies, layoutJs, glyphBodies, glyphJs, headingBodies, headingJs, messageBodies, messageJs, pillBodies, pillJs } from "./emit/components";
 
 const specs = join(import.meta.dir, "../specs/components");
 const pascal = (w: string) => w.split("-").map((s) => s[0].toUpperCase() + s.slice(1)).join("");
@@ -246,6 +246,13 @@ function fieldKind(c: FieldKind, o: Out) {
   serverRegions(o, `${c.name}-hidden`, { twig: b.twig.hidden, latte: b.latte.hidden, jinja2: b.jinja2.hidden }, c.name);
 }
 
+function partsKind(c: Parts, o: Out) {
+  const H = head(c.name), b = partsBodies();
+  for (const [rel, body] of Object.entries(partsFiles()))
+    o.files.set(rel, rel.endsWith(".vue") ? hdr("vue", H, body) : rel.endsWith(".svelte") ? hdr("svelte", H, body) : hdr("tsx", H, body));
+  serverRegions(o, c.name, b);
+}
+
 /** packages/ui-relative path -> content (whole files) and region bodies. */
 export async function componentOutputs(): Promise<Out> {
   const o: Out = { files: new Map(), regions: new Map() };
@@ -256,7 +263,8 @@ export async function componentOutputs(): Promise<Out> {
     else if (c.kind === "heading") headingKind(c, o);
     else if (c.kind === "glyph") glyphKind(c, o);
     else if (c.kind === "layout") layoutKind(c, o);
-    else fieldKind(c, o);
+    else if (c.kind === "field") fieldKind(c, o);
+    else partsKind(c, o);
   }
   return o;
 }

@@ -19,7 +19,11 @@ export type Layout = { kind: "layout"; name: string };
  * aria-invalid when the field or the form shows an error), the form-level error context (React/Solid context, Vue
  * injection key, Svelte context) and Hidden (value always emitted; templ also TextInput, the wired Input). */
 export type FieldKind = { kind: "field"; name: string };
-export type Component = Surface | Message | Pill | Heading | Glyph | Layout | FieldKind;
+/** parts: the shared widget parts over the middle layer: WidgetHead (head), Messages (error / info alerts), the
+ * landmark / error-id / control / submit helpers (React, Solid, WC _parts; templ blocks.templ authLink, buttonLink,
+ * submit, footLine, addonInput; server link / button macros) and the component index (re-export) files. */
+export type Parts = { kind: "parts"; name: string };
+export type Component = Surface | Message | Pill | Heading | Glyph | Layout | FieldKind | Parts;
 export const surface = (c: Omit<Surface, "kind">): Surface => ({ kind: "surface", ...c });
 export const message = (c: Omit<Message, "kind">): Message => ({ kind: "message", ...c });
 export const pill = (c: Omit<Pill, "kind">): Pill => ({ kind: "pill", ...c });
@@ -27,3 +31,4 @@ export const heading = (c: Omit<Heading, "kind">): Heading => ({ kind: "heading"
 export const glyph = (c: Omit<Glyph, "kind">): Glyph => ({ kind: "glyph", ...c });
 export const layout = (c: Omit<Layout, "kind">): Layout => ({ kind: "layout", ...c });
 export const field = (c: Omit<FieldKind, "kind">): FieldKind => ({ kind: "field", ...c });
+export const parts = (c: Omit<Parts, "kind">): Parts => ({ kind: "parts", ...c });

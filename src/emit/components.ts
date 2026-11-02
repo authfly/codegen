@@ -1026,3 +1026,334 @@ export function fieldBodies() {
 {%- endmacro -%}` },
   };
 }
+
+/** parts (WidgetHead / head, Messages, widget helpers, component indexes): whole files keyed by packages/ui path. */
+export function partsFiles(): Record<string, string> {
+  return {
+    "react/src/blocks/_parts.tsx": `// Authfly widget on UI8Kit 3 primitives. Props mirror packages/ui/react (xgen) one to one.
+import type { ReactNode } from "react";
+import { Stack } from "../components/layout";
+import { Title } from "../components/title";
+import { Alert } from "../components/alert";
+import { Text } from "../ui/text/text";
+import { textSkin } from "../skin/skin";
+
+/** Title + lead text of every widget. */
+export function WidgetHead({ id, title, text, align = "start", role, children }: { id: string; title: string; text: string; align?: "start" | "center"; role?: "alert" | "status"; children?: ReactNode }) {
+  return (
+    <Stack gap="2" align={align} role={role}>
+      <Title level={1} id={\`\${id}-title\`}>{title}</Title>
+      <Text className={textSkin.muted}>{text}</Text>
+      {children}
+    </Stack>
+  );
+}
+
+/** Error and info slots shared by the form widgets. */
+export function Messages({ id, error, info }: { id: string; error?: string; info?: string }) {
+  return (
+    <>
+      {error ? <Alert id={\`\${id}-error\`} tone="destructive" icon="circle-alert" data-testid="authfly-error">{error}</Alert> : null}
+      {info ? <Alert tone="default" icon="info" data-testid="authfly-info">{info}</Alert> : null}
+    </>
+  );
+}
+
+export { Hidden } from "../components/field";
+
+export const landmark = (id: string, landmarkLabel?: string) => ({
+  "aria-labelledby": landmarkLabel ? undefined : \`\${id}-title\`,
+  "aria-label": landmarkLabel,
+});
+export type Children = { children?: ReactNode };
+
+/** Form-level error id for <Form errorId>, only when an error is shown. */
+export const errorIdOf = (id: string, error?: string) => (error ? \`\${id}-error\` : undefined);
+`,
+    "solid/src/blocks/_parts.tsx": `import { Show, type JSX } from "solid-js";
+import { Stack } from "../components/layout";
+import { Title } from "../components/title";
+import { Alert } from "../components/alert";
+import { Text } from "../ui/text/text.solid";
+import { textSkin } from "../skin/skin";
+
+/** Title + lead text of every widget. */
+export function WidgetHead(props: { id: string; title: string; text: string; align?: "start" | "center"; role?: "alert" | "status"; children?: JSX.Element }) {
+  return (
+    <Stack gap="2" align={props.align ?? "start"} role={props.role}>
+      <Title level={1} id={\`\${props.id}-title\`}>{props.title}</Title>
+      <Text class={textSkin.muted}>{props.text}</Text>
+      {props.children}
+    </Stack>
+  );
+}
+
+/** Error and info slots shared by the form widgets. */
+export function Messages(props: { id: string; error?: string; info?: string }) {
+  return (
+    <>
+      <Show when={props.error}><Alert id={\`\${props.id}-error\`} tone="destructive" icon="circle-alert" data-testid="authfly-error">{props.error}</Alert></Show>
+      <Show when={props.info}><Alert tone="default" icon="info" data-testid="authfly-info">{props.info}</Alert></Show>
+    </>
+  );
+}
+
+export { Hidden } from "../components/field";
+export const landmark = (id: string, landmarkLabel?: string) => ({ "aria-labelledby": landmarkLabel ? undefined : \`\${id}-title\`, "aria-label": landmarkLabel });
+export const errorIdOf = (id: string, error?: string) => (error ? \`\${id}-error\` : undefined);
+`,
+    "webcomponent/src/blocks/_parts.ts": `// Shared parts of the Authfly widgets (light-DOM render functions): landmark, head, messages, form controls.
+import { renderText as text } from "../ui/text/text.wc";
+import { renderButton as button } from "../ui/button/button.wc";
+import { renderInput as input } from "../ui/input/input.wc";
+import { alert, stack, title } from "../components";
+import { buttonSkin, inputSkin, textSkin } from "../skin/skin";
+
+export const lm = (id: string, landmarkLabel?: string) => ({ "aria-labelledby": landmarkLabel ? undefined : \`\${id}-title\`, "aria-label": landmarkLabel });
+export const head = (id: string, t: string, x: string, align: "start" | "center" = "start", role?: "alert" | "status", extra: (Element | null)[] = []) =>
+  stack({ gap: "2", align, role }, [title(1, { id: \`\${id}-title\` }, [t]), text({ class: textSkin.muted }, [x]), ...extra]);
+export const messages = (id: string, error?: string, info?: string) => [
+  error ? alert({ id: \`\${id}-error\`, tone: "destructive", icon: "circle-alert", "data-testid": "authfly-error" }, [error]) : null,
+  info ? alert({ tone: "default", icon: "info", "data-testid": "authfly-info" }, [info]) : null,
+];
+export { hidden } from "../components/field";
+export const errOf = (id: string, error?: string) => (error ? \`\${id}-error\` : undefined);
+export const ctl = (props: Record<string, unknown>) => (f: { describe: (o?: string) => string | undefined; invalid?: string }) =>
+  input({ ...props, class: inputSkin(), "data-testid": "field", "aria-describedby": f.describe(), "aria-invalid": f.invalid } as never);
+export const submit = (label: string, variant: "default" | "outline" = "default", testid?: string, kids: (Element | string)[] = []) =>
+  button({ type: "submit", class: buttonSkin(variant, "w-full"), "data-testid": testid }, [...kids, label]);
+`,
+    "vue/src/blocks/WidgetHead.vue": `<script setup lang="ts">
+import Stack from "../components/Stack.vue";
+import Title from "../components/Title.vue";
+import Text from "../ui/text/Text.vue";
+import { textSkin } from "../skin/skin";
+const p = withDefaults(defineProps<{ id: string; title: string; text: string; align?: "start" | "center"; role?: "alert" | "status" }>(), { align: "start" });
+</script>
+<template>
+  <Stack gap="2" :align="p.align" :role="p.role">
+    <Title :level="1" :id="\`\${p.id}-title\`">{{ p.title }}</Title>
+    <Text :class="textSkin.muted">{{ p.text }}</Text>
+    <slot />
+  </Stack>
+</template>
+`,
+    "vue/src/blocks/Messages.vue": `<script setup lang="ts">
+import Alert from "../components/Alert.vue";
+const p = defineProps<{ id: string; error?: string; info?: string }>();
+</script>
+<template>
+  <Alert v-if="p.error" :id="\`\${p.id}-error\`" tone="destructive" icon="circle-alert" data-testid="authfly-error">{{ p.error }}</Alert>
+  <Alert v-if="p.info" tone="default" icon="info" data-testid="authfly-info">{{ p.info }}</Alert>
+</template>
+`,
+    "svelte/src/blocks/WidgetHead.svelte": `<script lang="ts">
+  import type { Snippet } from "svelte";
+  import Stack from "../components/Stack.svelte";
+  import Title from "../components/Title.svelte";
+  import Text from "../ui/text/Text.svelte";
+  import { textSkin } from "../skin/skin";
+  let { id, title, text, align = "start", role, children }: { id: string; title: string; text: string; align?: "start" | "center"; role?: "alert" | "status"; children?: Snippet } = $props();
+</script>
+
+<Stack gap="2" {align} {role}>
+  <Title level={1} id={\`\${id}-title\`}>{title}</Title>
+  <Text class={textSkin.muted}>{text}</Text>
+  {@render children?.()}
+</Stack>
+`,
+    "svelte/src/blocks/Messages.svelte": `<script lang="ts">
+  import Alert from "../components/Alert.svelte";
+  let { id, error, info }: { id: string; error?: string; info?: string } = $props();
+</script>
+
+{#if error}<Alert id={\`\${id}-error\`} tone="destructive" icon="circle-alert" data-testid="authfly-error">{error}</Alert>{/if}
+{#if info}<Alert tone="default" icon="info" data-testid="authfly-info">{info}</Alert>{/if}
+`,
+    "templ/authfly/components.templ": `// Authfly middle layer for templ (generated: card, alert, badge, title, lucide_icon, layout, field .templ): WidgetHead, Messages,
+// composed from the UI8Kit 3 primitives (ui/*) with class recipes from skin.go. Text is always passed as props
+// (escaped by templ), never as raw children HTML.
+package authfly
+
+import (
+	"github.com/authfly/authkit/packages/ui/templ/ui/text"
+)
+
+// WidgetHead: title + lead (+ children), used by every widget.
+templ WidgetHead(id, title, lead, align, role string) {
+	@Stack("2", or(align, "start"), "", "", A("role", role)) {
+		@Title(1, id+"-title", "", title)
+		@text.Text(text.TextProps{Class: TextMuted}) {
+			{ lead }
+		}
+		{ children... }
+	}
+}
+
+templ Messages(id, err, info string) {
+	if err != "" {
+		@Alert("destructive", "circle-alert", id+"-error", "authfly-error", err)
+	}
+	if info != "" {
+		@Alert("default", "info", "", "authfly-info", info)
+	}
+}
+`,
+    "templ/authfly/blocks.templ": `// The Authfly widgets on UI8Kit 3 primitives for templ (all six widgets are generated: authfly_<name>.templ; this file keeps their shared helpers). Props keep the xgen templ API (see props.go);
+// markup mirrors packages/ui/react/src/blocks one to one.
+package authfly
+
+import (
+	"github.com/authfly/authkit/packages/ui/templ/ui/button"
+	"github.com/authfly/authkit/packages/ui/templ/ui/link"
+	"github.com/authfly/authkit/packages/ui/templ/ui/text"
+)
+
+func field(f func(FieldControl) templ.Component) func(FieldControl) templ.Component { return f }
+
+templ authLink(href, class, testid, label string) {
+	@link.Link(link.LinkProps{Href: href, Class: class, Attrs: A("data-testid", testid)}) {
+		{ label }
+	}
+}
+
+templ buttonLink(href, class, testid, label string) {
+	@button.Button(button.ButtonProps{Href: href, Class: class, Attrs: A("data-testid", testid)}) {
+		{ label }
+	}
+}
+
+templ submit(class, testid, label string) {
+	@button.Button(button.ButtonProps{Type: "submit", Class: class, Attrs: A("data-testid", testid)}) {
+		{ label }
+	}
+}
+
+templ footLine(lead, href, testid, label string) {
+	@text.Text(text.TextProps{Class: TextMuted}) {
+		{ lead }{ " " }
+		@authLink(href, LinkSkin(), testid, label)
+	}
+}
+
+// addonInput: the input + a muted addon text (e.g. the mail domain) in a Group; the addon is rendered and linked via
+// aria-describedby only when non-blank (generated widgets: Field addon in authfly/codegen).
+templ addonInput(f FieldControl, typ, name, autocomplete, inputID string, required bool, addonID, addon, testid string) {
+	@Group("2", "", "", "", nil) {
+		@TextInput(f, typ, name, autocomplete, inputID, required, when(addon != "", addonID))
+		if addon != "" {
+			@text.Text(text.TextProps{Tag: "span", Class: TextMuted, Attrs: A("id", addonID, "data-testid", testid)}) {
+				{ addon }
+			}
+		}
+	}
+}
+`,
+    "react/src/components/index.ts": `export * from "./alert";
+export * from "./badge";
+export * from "./card";
+export * from "./field";
+export * from "./layout";
+export * from "./lucide-icon";
+export * from "./title";
+`,
+    "solid/src/components/index.ts": `export * from "./alert";
+export * from "./badge";
+export * from "./card";
+export * from "./field";
+export * from "./layout";
+export * from "./lucide-icon";
+export * from "./title";
+`,
+    "vue/src/components/index.ts": `export { default as Alert } from "./Alert.vue";
+export { default as Badge } from "./Badge.vue";
+export { default as Card } from "./Card.vue";
+export { default as Field } from "./Field.vue";
+export { default as Form } from "./Form.vue";
+export { default as Group } from "./Group.vue";
+export { default as IconBadge } from "./IconBadge.vue";
+export { default as LucideIcon } from "./LucideIcon.vue";
+export { default as Stack } from "./Stack.vue";
+export { default as Title } from "./Title.vue";
+export { FormErrorKey } from "./context";
+`,
+    "svelte/src/components/index.ts": `export { default as Alert } from "./Alert.svelte";
+export { default as Badge } from "./Badge.svelte";
+export { default as Card } from "./Card.svelte";
+export { default as Field } from "./Field.svelte";
+export { default as Form } from "./Form.svelte";
+export { default as Group } from "./Group.svelte";
+export { default as IconBadge } from "./IconBadge.svelte";
+export { default as LucideIcon } from "./LucideIcon.svelte";
+export { default as Stack } from "./Stack.svelte";
+export { default as Title } from "./Title.svelte";
+`,
+    "webcomponent/src/components/index.ts": `// Authfly middle layer for light-DOM web components: render functions over the UI8Kit 3 *.wc.ts primitives.
+// Every function returns a real Element (no shadow DOM); classes come from skin/skin.ts (tokens only).
+export { alert } from "./alert";
+export { badge, iconBadge } from "./badge";
+export { card } from "./card";
+export { field, hidden, type FieldControl } from "./field";
+export { form, group, stack, type FlexProps } from "./layout";
+export { lucideIcon } from "./lucide-icon";
+export { title } from "./title";
+`,
+  };
+}
+
+/** parts server region: head, messages, link, button macros (Twig, Latte, Jinja2). */
+export function partsBodies() {
+  return {
+    twig: `{%- macro head(id, title, lead, align, role, extra) -%}
+{%- set c -%}{{ _self.title(1, id ~ '-title', null, title) }}{{ _self.text('', af_text('muted'), {}, af_esc(lead)) }}{{ extra ?? '' }}{%- endset -%}
+{{ _self.stack('2', align ?: 'start', '', '', {role: role}, c) }}
+{%- endmacro -%}
+
+{%- macro messages(id, error, info) -%}
+{%- if error %}{{ _self.alert('destructive', 'circle-alert', id ~ '-error', 'authfly-error', af_esc(error)) }}{% endif -%}
+{%- if info %}{{ _self.alert('default', 'info', '', 'authfly-info', af_esc(info)) }}{% endif -%}
+{%- endmacro -%}
+
+{%- macro link(href, class, testid, label) -%}
+{{ include('ui/link/Link.html.twig', {href: href, class: class, attrs: af_attrs({'data-testid': testid}), children: af_esc(label)}, with_context = false) }}
+{%- endmacro -%}
+
+{%- macro button(href, type, class, attrs, children) -%}
+{{ include('ui/button/Button.html.twig', {href: href ?: '', type: type ?: '', class: class, attrs: af_attrs(attrs ?? {}), children: children}, with_context = false) }}
+{%- endmacro -%}`,
+    latte: `{define head, string $id, $title, $lead, string $align = 'start', $role = null, $extra = ''}
+{capture $c}{include title, 1, $id . '-title', null, $title}{include text, '', afText('muted'), [], afEsc($lead)}{$extra}{/capture}
+{include stack, '2', $align ?: 'start', '', '', ['role' => $role], $c}
+{/define}
+
+{define messages, string $id, $error, $info}
+{if $error}{include alert, 'destructive', 'circle-alert', $id . '-error', 'authfly-error', $error}{/if}
+{if $info}{include alert, 'default', 'info', '', 'authfly-info', $info}{/if}
+{/define}
+
+{define link, $href, string $class, string $testid, $label}
+{include '../ui/link/Link.latte', href: (string) $href, class: $class, attrs: afAttrs(['data-testid' => $testid]), children: (string) afEsc($label)}
+{/define}
+
+{define button, $href, string $type, string $class, array $attrs = [], $children = ''}
+{include '../ui/button/Button.latte', href: (string) $href, type: $type, class: $class, attrs: afAttrs($attrs), children: (string) $children}
+{/define}`,
+    jinja2: `{%- macro head(id, title_, lead, align='start', role=none, extra='') -%}
+{%- set c -%}{{ title(1, id ~ '-title', none, title_) }}{{ text('', af_text('muted'), {}, af_esc(lead)) }}{{ extra }}{%- endset -%}
+{{ stack('2', align or 'start', '', '', {'role': role}, c) }}
+{%- endmacro -%}
+
+{%- macro messages(id, error, info) -%}
+{%- if error %}{{ alert('destructive', 'circle-alert', id ~ '-error', 'authfly-error', error) }}{% endif -%}
+{%- if info %}{{ alert('default', 'info', '', 'authfly-info', info) }}{% endif -%}
+{%- endmacro -%}
+
+{%- macro link(href, cls, testid, label) -%}
+{{ prim('ui/link/link.html.j2', {'Href': href, 'Class': cls, 'Attrs': af_attrs({'data-testid': testid})}, af_esc(label)) }}
+{%- endmacro -%}
+
+{%- macro button(href, type, cls, attrs={}, children='') -%}
+{{ prim('ui/button/button.html.j2', {'Href': href, 'Type': type, 'Class': cls, 'Attrs': af_attrs(attrs)}, children) }}
+{%- endmacro -%}`,
+  };
+}
