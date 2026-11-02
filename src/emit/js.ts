@@ -4,7 +4,7 @@ import type { E, N, Widget, Attrs } from "../dsl";
 export type Js = "react" | "vue" | "svelte" | "solid";
 const kebab = (s: string) => s.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
 
-export function jsExpr(e: E, ref: (k: "prop" | "lab", n: string) => string, q = '"'): string {
+export function jsExpr(e: E, ref: (k: "prop" | "lab" | "let", n: string) => string, q = '"'): string {
   const s = (v: string) => (q === "'" ? `'${v.replace(/'/g, "\\'")}'` : JSON.stringify(v));
   const r = (x: E): string => {
     switch (x.k) {
@@ -14,6 +14,8 @@ export function jsExpr(e: E, ref: (k: "prop" | "lab", n: string) => string, q = 
       case "lit": return s(x.v);
       case "eq": return `${r(x.a)} === ${s(x.v)}`;
       case "iff": return `${r(x.c)} ? ${r(x.a)} : ${r(x.b)}`;
+      case "or": return `${r(x.a)} ?? ${s(x.v)}`;
+      case "let": return ref("let", x.n);
       case "cat": return "`" + x.parts.map((p) => (p.k === "lit" ? p.v : p.k === "lab" ? `\${${r(p)} ?? ${s("")}}` : `\${${r(p)}}`)).join("") + "`";
     }
   };
@@ -23,7 +25,9 @@ export function jsExpr(e: E, ref: (k: "prop" | "lab", n: string) => string, q = 
 export function emitJs(t: Js, w: Widget): string {
   const defs = new Map(w.props.filter((p) => p.def !== undefined).map((p) => [p.name, p.def!]));
   const pre = t === "vue" || t === "solid" ? "p." : "";
-  const ref = (k: "prop" | "lab", n: string) => (k === "lab" ? `${pre}labels.${n}` : `${pre}${n}`);
+  const lets = new Map((w.lets ?? []).map((l) => [l.name, l.e]));
+  const ref = (k: "prop" | "lab" | "let", n: string): string =>
+    k === "let" ? (t === "react" ? n : jsExpr(lets.get(n)!, ref, q)) : k === "lab" ? `${pre}labels.${n}` : `${pre}${n}`;
   const q = t === "vue" ? "'" : '"';
   const x = (e: E) => jsExpr(e, ref, q);
   const cls = t === "react" ? "className" : "class";
@@ -44,12 +48,29 @@ export function emitJs(t: Js, w: Widget): string {
   const node = (n: N, ind: string, extra: string[] = []): string[] => {
     const I = (s: string) => ind + s;
     switch (n.k) {
-      case "head": used.add("WidgetHead");
-        return [I(t === "svelte" ? "<WidgetHead {id} {title} {text} />" : `<WidgetHead ${[code("id", ref("prop", "id")), code("title", ref("prop", "title")), code("text", ref("prop", "text"))].join(" ")} />`)];
+      case "head": {
+        used.add("WidgetHead");
+        const ha = [...(t === "svelte" ? ["{id} {title} {text}"] : [code("id", ref("prop", "id")), code("title", ref("prop", "title")), code("text", ref("prop", "text"))]),
+          ...(n.align ? [`align="${n.align}"`] : []), ...(n.role ? [at("role", n.role)] : [])].join(" ");
+        if (!n.kids.length) return [I(`<WidgetHead ${ha} />`)];
+        return [I(`<WidgetHead ${ha}>`), ...kids(n.kids, ind + "  "), I("</WidgetHead>")];
+      }
       case "messages": used.add("Messages");
         return [I(t === "svelte" ? `<Messages {id} {error}${n.info ? " {info}" : ""} />` : `<Messages ${[code("id", ref("prop", "id")), code("error", ref("prop", "error")), ...(n.info ? [at("info", n.info)] : [])].join(" ")} />`)];
       case "when": {
         const c = x(n.c);
+        if (n.els) {
+          const e = n.els;
+          if (t === "react") {
+            const br = (ns: N[]) => (ns.length === 1 ? kids(ns, ind + "  ") : [I("  <>"), ...kids(ns, ind + "    "), I("  </>")]);
+            return [I(`{${c} ? (`), ...br(n.kids), I(") : ("), ...br(e), I(")}")];
+          }
+          if (t === "solid") return [I(`<Show when={${c}} fallback={${e.length === 1 ? inline(e) : `<>${inline(e)}</>`}}>`), ...kids(n.kids, ind + "  "), I("</Show>")];
+          if (t === "svelte") return [I(`{#if ${c}}`), ...kids(n.kids, ind + "  "), I("{:else}"), ...kids(e, ind + "  "), I("{/if}")];
+          const vb = (ns: N[], d: string) => (ns.length === 1 ? node(ns[0], ind, [d]) : [I(`<template ${d}>`), ...kids(ns, ind + "  "), I("</template>")]);
+          return [...vb(n.kids, `v-if="${c.replace(/"/g, "'")}"`), ...vb(e, "v-else")];
+        }
+        if (t === "react" && n.inline && n.kids.length === 1) return [I(`{${c} ? ${inline(n.kids)} : null}`)];
         if (t === "react") {
           const body = kids(n.kids, ind + "  ");
           return n.kids.length === 1 ? [I(`{${c} ? (`), ...body, I(") : null}")] : [I(`{${c} ? (`), I("  <>"), ...kids(n.kids, ind + "    "), I("  </>"), I(") : null}")];
@@ -71,9 +92,10 @@ export function emitJs(t: Js, w: Widget): string {
       case "stack": used.add("Stack");
         return [I(`<Stack ${[...extra, `gap="${n.gap}"`, ...attrs(n.attrs)].join(" ")}>`), ...kids(n.kids, ind + "  "), I("</Stack>")];
       case "form": used.add("Form");
-        return [I(`<Form ${[...extra, 'method="post"', code("action", ref("prop", "action")),
-          code("errorId", t === "react" || t === "solid" ? `errorIdOf(${ref("prop", "id")}, ${ref("prop", "error")})` : `${ref("prop", "error")} ? \`\${${ref("prop", "id")}}-error\` : undefined`),
-          'data-testid="authfly-form"'].join(" ")}>`), ...kids(n.kids, ind + "  "), I("</Form>")];
+        if (n.errorId && (t === "react" || t === "solid")) used.add("errorIdOf");
+        return [I(`<Form ${[...extra, 'method="post"', code("action", ref("prop", n.action)),
+          ...(n.errorId ? [code("errorId", t === "react" || t === "solid" ? `errorIdOf(${ref("prop", "id")}, ${ref("prop", "error")})` : `${ref("prop", "error")} ? \`\${${ref("prop", "id")}}-error\` : undefined`)] : []),
+          ...(n.extra ? [`${cls}="${n.extra}"`] : []), 'data-testid="authfly-form"'].join(" ")}>`), ...kids(n.kids, ind + "  "), I("</Form>")];
       case "hidden":
         if (t === "react" || t === "solid") { used.add("Hidden"); return [I(`<Hidden name="${n.name}" ${at("value", n.value)} />`)]; }
         used.add("Input"); return [I(`<Input type="hidden" name="${n.name}" ${at("value", n.value)} />`)];
@@ -83,7 +105,7 @@ export function emitJs(t: Js, w: Widget): string {
         const a = n.addon;
         const addonId = a ? `\`\${${ref("prop", "id")}}-${a.id}\`` : "";
         const addonOn = a ? `${x(a.text)} ? ${addonId} : undefined` : "";
-        const inp = [at("type", n.type), `name="${n.name}"`, at(ac, n.autocomplete), ...(n.required ? ["required"] : []), idOf(n.name),
+        const inp = [at("type", n.type), `name="${n.name}"`, ...(n.inputmode ? [`${t === "react" ? "inputMode" : "inputmode"}="${n.inputmode}"`] : []), at(ac, n.autocomplete), ...(n.required ? ["required"] : []), idOf(n.name),
           ...(a && t === "react" ? [code("aria-describedby", addonOn)] : []), code(cls, "inputSkin()"), 'data-testid="field"'];
         const fl = [code("label", x(n.label)), code("htmlFor", `\`\${${ref("prop", "id")}}-${n.name}\``), ...(n.hint ? [code("hint", x(n.hint))] : [])];
         const aria = t === "react" ? [] : [code("aria-describedby", `f.describe(${addonOn})`), code("aria-invalid", "f.invalid")];
@@ -107,6 +129,7 @@ export function emitJs(t: Js, w: Widget): string {
       case "checkbox": {
         used.add("Group"); used.add("Checkbox"); used.add("Label"); skins.add("checkboxSkin"); skins.add("labelSkin");
         const cid = `\`\${${ref("prop", "id")}}-${n.name}\``;
+        if (t === "react" || t === "solid") used.add("errorIdOf");
         const err = t === "react" || t === "solid" ? `errorIdOf(${ref("prop", "id")}, ${ref("prop", "error")})` : `${ref("prop", "error")} ? \`\${${ref("prop", "id")}}-error\` : undefined`;
         const inv = `${ref("prop", "error")} ? ${q}true${q} : undefined`;
         const cb = `<Checkbox ${[`name="${n.name}"`, ...(n.required ? ["required"] : []), code("id", cid), code("aria-describedby", err), code("aria-invalid", inv), code(cls, "checkboxSkin()")].join(" ")} />`;
@@ -133,14 +156,19 @@ export function emitJs(t: Js, w: Widget): string {
         return [I(`<Text ${[...extra, code(cls, "textSkin.muted")].join(" ")}>${out(n.lead)}${sp}${ln}</Text>`)];
       }
       case "icon": used.add("LucideIcon"); return [I(`<LucideIcon ${at("name", n.name)} />`)];
+      case "iconBadge": used.add("IconBadge");
+        return [I(`<IconBadge ${[...extra, t === "svelte" && n.icon.k === "prop" && n.icon.n === "icon" ? "{icon}" : at("icon", n.icon), at("tone", n.tone)].join(" ")} />`)];
+      case "para": used.add("Text");
+        return [I(`<Text ${[...extra, `${t === "react" ? "className" : "class"}="${n.cls}"`, `data-testid="${n.testid}"`].join(" ")}>${out(n.v)}</Text>`)];
       case "text": return [I(out(n.v))];
     }
   };
-  const isLeaf = (n: N) => ["button", "link", "submit", "foot", "text", "icon", "hidden"].includes(n.k);
+  const isLeaf = (n: N) => ["button", "link", "submit", "foot", "text", "icon", "hidden", "para", "iconBadge"].includes(n.k);
 
   used.add("Card"); skins.add("widgetCardSkin");
   const lmProps = t === "react" || t === "solid" ? `{...landmark(${ref("prop", "id")}, ${ref("prop", "landmarkLabel")})}` : t === "vue" ? 'v-bind="lm"' : "{...lm}";
-  const body = [`<Card ${code(cls, "widgetCardSkin()")} data-testid="authfly-${w.name}" ${lmProps}>`, ...kids(w.body, "  "), "</Card>"];
+  const cardSkin = w.card?.extra ? `widgetCardSkin(${q}${w.card.extra}${q})` : "widgetCardSkin()";
+  const body = [`<Card ${[code(cls, cardSkin), `data-testid="authfly-${w.name}"`, ...attrs(w.card?.attrs ?? {}), lmProps].join(" ")}>`, ...kids(w.body, "  "), "</Card>"];
   const skinList = ["buttonSkin", "linkSkin", "inputSkin", "checkboxSkin", "labelSkin", "textSkin", "widgetCardSkin"].filter((s) => skins.has(s)).join(", ");
   const head = w.doc.split("\n").map((l) => `// ${l}`);
   const gen = `// Code generated by authfly/codegen from specs/widgets/${w.name}.def.ts. DO NOT EDIT.`;
@@ -151,14 +179,15 @@ export function emitJs(t: Js, w: Widget): string {
     const imp = [
       ...(sol ? [`import { ${["For", "Show"].filter((s) => new RegExp(`<${s}[ >]`).test(body.join("\n"))).concat("mergeProps").join(", ")} } from "solid-js";`] : []),
       `import { Card } from "../components/card";`,
-      `import { ${["Stack", "Group", "Form"].filter((s) => used.has(s)).join(", ")} } from "../components/layout";`,
+      ...(["Stack", "Group", "Form"].some((s) => used.has(s)) ? [`import { ${["Stack", "Group", "Form"].filter((s) => used.has(s)).join(", ")} } from "../components/layout";`] : []),
       ...(used.has("Field") ? [`import { Field } from "../components/field";`] : []),
       ...(used.has("LucideIcon") ? [`import { LucideIcon } from "../components/lucide-icon";`] : []),
+      ...(used.has("IconBadge") ? [`import { IconBadge } from "../components/badge";`] : []),
       ...(used.has("Text") ? [ui("Text", "text")] : []), ...(used.has("Button") ? [ui("Button", "button")] : []),
       ...(used.has("Link") ? [ui("Link", "link")] : []), ...(used.has("Input") ? [ui("Input", "input")] : []),
       ...(used.has("Label") ? [ui("Label", "label")] : []), ...(used.has("Checkbox") ? [ui("Checkbox", "checkbox")] : []),
       `import { ${skinList} } from "../skin/skin";`,
-      `import { ${["WidgetHead", "Messages", "Hidden"].filter((s) => used.has(s)).concat("landmark", "errorIdOf").join(", ")} } from "./_parts";`,
+      `import { ${["WidgetHead", "Messages", "Hidden"].filter((s) => used.has(s)).concat("landmark", ...(used.has("errorIdOf") ? ["errorIdOf"] : [])).join(", ")} } from "./_parts";`,
     ];
     if (sol) {
       const d = w.props.filter((p) => p.def !== undefined).map((p) => `${p.name}: ${JSON.stringify(p.def)}${p.ts.startsWith('"') ? " as const" : ""}`).join(", ");
@@ -169,13 +198,13 @@ export function emitJs(t: Js, w: Widget): string {
     const pt = w.props.map((p) => `  ${p.name}${p.def !== undefined || p.optional ? "?" : ""}: ${p.ts};`);
     const args = w.props.map((p) => (p.def !== undefined ? `${p.name} = ${JSON.stringify(p.def)}` : p.name)).join(", ");
     return [gen, ...head, ...imp, ...types, "", `export type ${w.component}Props = {`, ...pt, "};", "",
-      `export function ${w.component}({ ${args} }: ${w.component}Props) {`, "  return (", ...body.map((l) => "    " + l), "  );", "}", ""].join("\n");
+      `export function ${w.component}({ ${args} }: ${w.component}Props) {`, ...(w.lets ?? []).map((l) => `  const ${l.name} = ${x(l.e)};`), "  return (", ...body.map((l) => "    " + l), "  );", "}", ""].join("\n");
   }
   const ext = t === "vue" ? "vue" : "svelte";
   const P = (s: string) => s[0].toUpperCase() + s.slice(1);
   const imp = [
     `import Card from "../components/Card.${ext}";`,
-    ...["Stack", "Group", "Form", "Field", "LucideIcon"].filter((s) => used.has(s)).map((s) => `import ${s} from "../components/${s}.${ext}";`),
+    ...["Stack", "Group", "Form", "Field", "LucideIcon", "IconBadge"].filter((s) => used.has(s)).map((s) => `import ${s} from "../components/${s}.${ext}";`),
     ...["text", "button", "link", "input", "label", "checkbox"].filter((s) => used.has(P(s))).map((s) => `import ${P(s)} from "../ui/${s}/${P(s)}.${ext}";`),
     ...["WidgetHead", "Messages"].filter((s) => used.has(s)).map((s) => `import ${s} from "./${s}.${ext}";`),
     `import { ${skinList} } from "../skin/skin";`,

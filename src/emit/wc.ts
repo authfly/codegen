@@ -4,7 +4,9 @@ import { jsExpr } from "./js";
 
 export function emitWc(w: Widget): string {
   const defs = new Map(w.props.filter((p) => p.def !== undefined).map((p) => [p.name, p.def!]));
-  const ref = (k: "prop" | "lab", n: string) => (k === "lab" ? `p.labels.${n}` : defs.has(n) ? `(p.${n} ?? ${JSON.stringify(defs.get(n))})` : `p.${n}`);
+  const lets = new Map((w.lets ?? []).map((l) => [l.name, l.e]));
+  const ref = (k: "prop" | "lab" | "let", n: string): string =>
+    k === "let" ? jsExpr(lets.get(n)!, ref) : k === "lab" ? `p.labels.${n}` : defs.has(n) ? `(p.${n} ?? ${JSON.stringify(defs.get(n))})` : `p.${n}`;
   const x = (e: E) => jsExpr(e, ref);
   const used = new Set<string>(); const skins = new Set<string>(["widgetCardSkin"]);
   const obj = (o: [string, string][]) => `{ ${o.map(([k, v]) => `${/^[a-zA-Z]+$/.test(k) ? k : JSON.stringify(k)}: ${v}`).join(", ")} }`;
@@ -12,17 +14,23 @@ export function emitWc(w: Widget): string {
   const list = (ns: N[]) => `[${ns.map(node).join(", ")}]`;
   const node = (n: N): string => {
     switch (n.k) {
-      case "head": used.add("head"); return `head(p.id, p.title, p.text)`;
+      case "head": used.add("head");
+        if (!n.align && !n.role && !n.kids.length) return `head(p.id, p.title, p.text)`;
+        return `head(p.id, p.title, p.text, ${JSON.stringify(n.align ?? "start")}, ${n.role ? x(n.role) : "undefined"}${n.kids.length ? `, ${list(n.kids)}` : ""})`;
       case "messages": used.add("messages"); return `...messages(p.id, ${ref("prop", "error")}${n.info ? `, ${x(n.info)}` : ""})`;
-      case "when": return n.kids.length === 1 ? `${x(n.c)} ? ${node(n.kids[0])} : null` : `...(${x(n.c)} ? ${list(n.kids)} : [])`;
+      case "when":
+        if (n.els) return n.kids.length === 1 && n.els.length === 1 ? `${x(n.c)} ? ${node(n.kids[0])} : ${node(n.els[0])}` : `...(${x(n.c)} ? ${list(n.kids)} : ${list(n.els)})`;
+        return n.kids.length === 1 ? `${x(n.c)} ? ${node(n.kids[0])} : null` : `...(${x(n.c)} ? ${list(n.kids)} : [])`;
       case "each": return `...(${ref("prop", n.list)} ?? []).map((pr) => ${node(n.kids[0])})`;
       case "stack": used.add("stack"); return `stack(${obj([["gap", JSON.stringify(n.gap)], ...ax(n.attrs)])}, ${list(n.kids)})`;
-      case "form": used.add("form"); return `form({ action: p.action, "data-testid": "authfly-form" }, ${list(n.kids)})`;
+      case "form": used.add("form"); return `form(${obj([["action", ref("prop", n.action)], ...(n.extra ? [["class", JSON.stringify(n.extra)]] as [string, string][] : []), ["data-testid", '"authfly-form"']])}, ${list(n.kids)})`;
+      case "iconBadge": used.add("iconBadge"); return `iconBadge(${x(n.icon)}, ${x(n.tone)})`;
+      case "para": used.add("text"); return `text(${obj([["class", JSON.stringify(n.cls)], ["data-testid", JSON.stringify(n.testid)]])}, [${x(n.v)}])`;
       case "hidden": used.add("hidden"); return `hidden(${JSON.stringify(n.name)}, ${x(n.value)})`;
       case "field": {
         used.add("field"); used.add("errOf");
         const fp = obj([["label", x(n.label)], ["htmlFor", `\`\${p.id}-${n.name}\``], ...(n.hint ? [["hint", x(n.hint)]] as [string, string][] : []), ["formError", `errOf(p.id, ${ref("prop", "error")})`]]);
-        const ip: [string, string][] = [["type", x(n.type)], ["name", JSON.stringify(n.name)], ["autocomplete", x(n.autocomplete)], ...(n.required ? [["required", "true"]] as [string, string][] : []), ["id", `\`\${p.id}-${n.name}\``]];
+        const ip: [string, string][] = [["type", x(n.type)], ["name", JSON.stringify(n.name)], ...(n.inputmode ? [["inputmode", JSON.stringify(n.inputmode)]] as [string, string][] : []), ["autocomplete", x(n.autocomplete)], ...(n.required ? [["required", "true"]] as [string, string][] : []), ["id", `\`\${p.id}-${n.name}\``]];
         if (!n.addon) { used.add("ctl"); return `field(${fp}, ctl(${obj(ip)}))`; }
         const a = n.addon; const aid = `\`\${p.id}-${a.id}\``;
         used.add("input"); used.add("group"); used.add("text"); skins.add("inputSkin"); skins.add("textSkin");
@@ -45,10 +53,10 @@ export function emitWc(w: Widget): string {
       case "text": return x(n.v);
     }
   };
-  const body = `card({ class: widgetCardSkin(), "data-testid": "authfly-${w.name}", ...lm(p.id, p.landmarkLabel) }, ${list(w.body)})`;
+  const body = `card({ class: widgetCardSkin(${w.card?.extra ? JSON.stringify(w.card.extra) : ""}), "data-testid": "authfly-${w.name}", ${ax(w.card?.attrs ?? {}).map(([k, v]) => `${JSON.stringify(k)}: ${v}, `).join("")}...lm(p.id, p.landmarkLabel) }, ${list(w.body)})`;
   const fn = `render${w.component}`;
   const prim = ["text", "button", "link", "input", "label", "checkbox"].filter((s) => used.has(s));
-  const comps = ["card", "field", "form", "group", "lucideIcon", "stack"].filter((s) => s === "card" || used.has(s));
+  const comps = ["card", "field", "form", "group", "iconBadge", "lucideIcon", "stack"].filter((s) => s === "card" || used.has(s));
   const parts = ["lm", "head", "messages", "hidden", "errOf", "ctl", "submit"].filter((s) => s === "lm" || used.has(s));
   return [
     `// Code generated by authfly/codegen from specs/widgets/${w.name}.def.ts. DO NOT EDIT.`,
